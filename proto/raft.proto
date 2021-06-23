@@ -1,0 +1,130 @@
+syntax = "proto2";
+
+package pb;
+
+service Raft {
+  // Invoked by leader to replicate log entries; also used as heartbeat.
+  rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
+
+  // Invoked by candidates to gather votes.
+  rpc Vote(VoteRequest) returns (VoteResponse);
+
+  // Invoked by admin to add a server to the cluster configuration
+  rpc AddServer(AddServerRequest) returns (AddServerResponse);
+
+  // Invoked by admin to remove a server from the cluster configuration
+  rpc RemoveServer(RemoveServerRequest) returns (RemoveServerResponse);
+}
+
+message HardState {
+  // latest term server has seen (initialized to 0 on first boot, increases monotonically)
+  required uint64 current_term = 1;
+
+  // candidateId that received vote in current term (or null if none)
+  optional string voted_for = 2;
+
+  // index of highest log entry known to be committed (initialized to 0, increases monotonically)
+  required uint64 commit_index = 3;
+}
+
+enum EntryType {
+  Normal = 0;
+  OldSnapshot = 1;
+  PeerState = 2;
+  AddPeer = 3;
+  RemovePeer = 4;
+  LeaderTransfer = 5;
+  Snapshot = 6;
+}
+
+message Entry {
+  optional EntryType typ = 1;
+  optional bytes data = 2;
+}
+
+message AppendEntriesRequest {
+  // leader's term
+  required uint64 term = 1;
+
+  // so follower can redirect clients
+  required string leader_id = 2;
+
+  // index of log entry immediately preceding new ones
+  optional uint64 prev_log_index = 3;
+
+  // term of prev_log_index entry
+  optional uint64 prev_log_term = 4;
+
+  // log entries to store (empty for heartbeat; may send more
+  // than one for efficiency)
+  repeated Entry entries = 5;
+
+  // leader's commit index
+  required uint64 leader_commit = 6;
+}
+
+message AppendEntriesResponse {
+  // current term, for leader to update itself
+  required uint64 term = 1;
+
+  // true if follower contained entry matching prev_log_index
+  // and prev_log_term
+  required bool success = 2;
+}
+
+message VoteRequest {
+  // candidate's term
+  required uint64 term = 1;
+
+  // candidate requesting vote
+  required string candidate_id = 2;
+
+  // index of candidate's last log entry
+  optional uint64 last_log_index = 3;
+
+  // term of candidate's last log entry
+  optional uint64 last_log_term = 4;
+}
+
+message VoteResponse {
+  // current term, for candidate to update itself
+  required uint64 term = 1;
+
+  // true means candidate received vote
+  required bool vote_granted = 2;
+}
+
+message AddServerRequest {
+  // address of server to add to configuration
+  required string addr = 1;
+}
+
+enum Status {
+  OK = 0;
+  NOT_LEADER = 1;
+  TIMEOUT = 2;
+  SESSION_EXPIRED = 3;
+}
+
+message AddServerResponse {
+  // OK if server was added successfully
+  // NOT_LEADER if not leader
+  // TIMEOUT if new server does not make progress for an election timeout or if the last round takes longer than the election timeout.
+  required Status status = 1;
+
+  // address of recent leader, if known
+  optional string leader_hint = 2;
+}
+
+message RemoveServerRequest {
+  // address of server to remove from configuration
+  required string old_server = 1;
+}
+
+message RemoveServerResponse {
+  // OK if server was removed successfully
+  required Status status = 1;
+
+  // address of recent leader, if known
+  optional string leader_hint = 2;
+}

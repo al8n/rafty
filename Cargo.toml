@@ -1,0 +1,37 @@
+[package]
+name = "tokio-raft"
+version = "0.1.0"
+edition = "2018"
+authors = ["Al Liu <scygliu1@gmail.com>"]
+categories = ["algorithms", "asynchronous", "data-structures", "distributed"]
+description = "Raft algorithm implementation based on Tokio async runtime."
+documentation = "https://docs.rs/tokio-raft"
+homepage = "https://github.com/al8n/tokio-raft"
+keywords = ["raft", "consensus"]
+license = "Apache-2.0"
+repository = "https://github.com/al8n/tokio-raft"
+readme = "./README.md"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1"
+bytes = "1.0.1"
+bincode = "1.3.3"
+chrono = {version = "0.4.19", features = ["serde"]}
+futures = "0.3"
+thiserror = "1"
+tonic = "0.4.3"
+tokio = { version="1.5", features = ["full"] }
+lazy_static = "1.4.0"
+log = "0.4"
+prost = "0.7.0"
+rand = "0.8"
+serde_json = "1"
+serde_yaml = "0.8"
+serde = { version="1", features=["derive"] }
+tracing = "0.1.26"
+tracing-futures = "0.2.5"
+
+[build-dependencies]
+tonic-build = "0.4.2"
