@@ -72,6 +72,7 @@ message AppendEntriesResponse {
   required bool success = 2;
 }
 
+// The vote request candidates (§5.2).
 message VoteRequest {
   // candidate's term
   required uint64 term = 1;
@@ -86,6 +87,7 @@ message VoteRequest {
   optional uint64 last_log_term = 4;
 }
 
+// The vote response
 message VoteResponse {
   // current term, for candidate to update itself
   required uint64 term = 1;

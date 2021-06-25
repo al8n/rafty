@@ -57,6 +57,7 @@ pub struct AppendEntriesResponse {
     #[prost(bool, required, tag = "2")]
     pub success: bool,
 }
+/// The vote request candidates (§5.2).
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -74,6 +75,7 @@ pub struct VoteRequest {
     #[prost(uint64, optional, tag = "4")]
     pub last_log_term: ::core::option::Option<u64>,
 }
+/// The vote response
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
