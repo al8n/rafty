@@ -119,13 +119,13 @@ pub enum LogStoreError {}
 /// and retrieving logs in a durable fashion.
 pub trait LogStore {
     /// first_index returns the first index written. 0 for no entries.
-    fn first_index(&self) -> Result<u64>;
+    fn first_index(&self) -> Result<u64, Errors>;
 
     /// last_index returns the last index written. 0 for no entries.
-    fn last_index(&self) -> Result<u64>;
+    fn last_index(&self) -> Result<u64, Errors>;
 
     /// get_log gets a log entry at a given index.
-    fn get_log(&self, index: u64) -> Result<NonNull<Log>, Errors>;
+    fn get_log(&self, index: u64) -> Result<Log, Errors>;
 
     /// store_log stores a log entry
     fn store_log(&mut self, log: Log) -> Result<(), Errors>;
@@ -137,29 +137,38 @@ pub trait LogStore {
     fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors>;
 }
 
-pub fn oldest_log(s: Box<dyn LogStore>) -> Result<Log> {
-    // let mut log: Log;
-    // let mut last_fail_idx = -1;
-    // let mut last_err: dyn std::error::Error = ();
-    unimplemented!()
-    // loop {
-    //     let first_idx = s.first_index()?;
-    //     if first_idx == 0 {
-    //         return Err();
-    //     }
-    //     if first_idx == last_fail_idx {
-    //         return last_err;
-    //     }
-    //     let err = s.get_log(first_idx, &mut log);
-    //     if let Ok(_) = err {
-    //         break;
-    //     }
-    //
-    //     last_fail_idx = first_idx;
-    //     last_err = err.unwrap_err();
-    // }
-    //
-    // Ok(log)
+pub fn oldest_log(s: Box<dyn LogStore>) -> Result<Log, Errors> {
+    // We might get unlucky and have a truncate right between getting first log
+    // index and fetching it so keep trying until we succeed or hard fail.
+    let mut last_fail_idx = 0;
+    let mut last_err: Errors = Errors::LogNotFound;
+
+    loop {
+        let first_idx = s.first_index()?;
+        if first_idx == 0 {
+            return Err(Errors::LogNotFound);
+        }
+
+        if first_idx == last_fail_idx {
+            // Got same index as last time around which errored, don't bother trying
+            // to fetch it again just return the error
+            return Err(last_err);
+        }
+
+        let l = s.get_log(first_idx);
+
+        match l {
+            Ok(l) => {
+                // we found the oldest log, break the loop
+                return Ok(l);
+            }
+            Err(e) => {
+                // We failed, keep trying to see if there is a new first_idx
+                last_err = e;
+                last_fail_idx = first_idx;
+            }
+        }
+    }
 }
 
 pub fn emit_log_store_metrics(
@@ -176,6 +185,7 @@ pub fn emit_log_store_metrics(
     select! {
         recv(stop_chan) -> sig => return,
         default(interval) => {
+            // In error case emit 0 as the age
             let mut age_ms = 0i64;
             if let Ok(l) = oldest_log(s) {
                 if l.append_at.timestamp_millis() != 0 {
@@ -190,12 +200,81 @@ pub fn emit_log_store_metrics(
 
 #[cfg(test)]
 mod tests {
+    use crate::errors::Errors;
+    use crate::log::{oldest_log, Log, LogStore, LogType};
+    use crate::mem_store::MemStore;
+    use chrono::Utc;
     use metrics::gauge;
+
+
     #[test]
-    fn test_gauge() {
-        gauge!(
-            vec![String::from("vbc"), String::from("asdasd")].join("."),
-            6.8,
-        );
+    fn test_oldest_log() {
+        struct Case {
+            name: String,
+            logs: Vec<Log>,
+            want_idx: u64,
+            want_err: bool,
+        }
+
+        let cases = vec![
+            Case {
+                name: "empty logs".to_string(),
+                logs: vec![],
+                want_idx: 0,
+                want_err: true,
+            },
+            Case {
+                name: "simple case".to_string(),
+                logs: vec![
+                    Log {
+                        index: 1234,
+                        term: 1,
+                        typ: LogType::Command,
+                        data: vec![],
+                        extensions: vec![],
+                        append_at: Utc::now(),
+                    },
+                    Log {
+                        index: 1235,
+                        term: 1,
+                        typ: LogType::Command,
+                        data: vec![],
+                        extensions: vec![],
+                        append_at: Utc::now(),
+                    },
+                    Log {
+                        index: 1236,
+                        term: 2,
+                        typ: LogType::Command,
+                        data: vec![],
+                        extensions: vec![],
+                        append_at: Utc::now(),
+                    },
+                ],
+                want_idx: 1234,
+                want_err: false,
+            },
+        ];
+
+        for case in cases {
+            let mut s = MemStore::new();
+            let st = s.store_logs(case.logs);
+            assert_eq!((), st.unwrap());
+
+            let got = oldest_log(box s);
+            match got {
+                Ok(got) => {
+                    if case.want_err {
+                        panic!("wanted error got nil");
+                    }
+                    assert_eq!(got.index, case.want_idx);
+                }
+                Err(e) => {
+                    if !case.want_err {
+                        panic!("wanted no error got {}", e);
+                    }
+                }
+            }
+        }
     }
 }

@@ -3,7 +3,7 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 
 use anyhow::Result;
-use parking_lot::{RwLock};
+use parking_lot::RwLock;
 
 use crate::errors::Errors;
 use crate::log::{Log, LogStore};
@@ -26,18 +26,18 @@ impl MemStore {
 }
 
 impl LogStore for MemStore {
-    fn first_index(&self) -> Result<u64> {
+    fn first_index(&self) -> Result<u64, Errors> {
         Ok(self.core.read().low_index)
     }
 
-    fn last_index(&self) -> Result<u64> {
+    fn last_index(&self) -> Result<u64, Errors> {
         Ok(self.core.read().high_index)
     }
 
-    fn get_log(&self, index: u64) -> Result<NonNull<Log>, Errors> {
+    fn get_log(&self, index: u64) -> Result<Log, Errors> {
         match self.core.read().logs.get(&index) {
             None => Err(Errors::LogNotFound),
-            Some(l) => Ok(NonNull::from(l)),
+            Some(l) => Ok(l.clone()),
         }
     }
 
@@ -167,8 +167,7 @@ mod test {
         ])?;
 
         let l = ms.get_log(1)?;
-        let idx = unsafe { l.as_ref().index };
-        assert_eq!(idx, 1);
+        assert_eq!(l.index, 1);
 
         ms.delete_range(0, 2)?;
 

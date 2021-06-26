@@ -1,3 +1,4 @@
+#![feature(box_syntax)]
 extern crate derive_getters;
 extern crate lazy_static;
 
