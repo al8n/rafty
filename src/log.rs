@@ -1,11 +1,13 @@
 use std::fmt::{Display, Formatter, Result as FormatResult};
 use std::time::Duration;
 
+use crate::errors::Errors;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use crossbeam::channel::{select, Receiver};
 use derive_getters::Getters;
 use metrics::gauge;
+use std::ptr::NonNull;
 
 /// LogType describes various types of log entries
 #[derive(Debug, Copy, Clone)]
@@ -58,16 +60,16 @@ impl Display for LogType {
 #[derive(Debug, Clone, Getters)]
 pub struct Log {
     /// index holds the index of the log entry
-    index: u64,
+    pub index: u64,
 
     /// term holds the election term of the log entry
-    term: u64,
+    pub term: u64,
 
     /// typ holds the type of the log entry
-    typ: LogType,
+    pub typ: LogType,
 
     /// data holds the log entry's type-specific data,
-    data: Vec<u8>,
+    pub data: Vec<u8>,
 
     /// extensions holds an opaque byte slice of information for middleware. It
     /// is up to the client of the library to properly modify this as it adds
@@ -82,7 +84,7 @@ pub struct Log {
     /// upgraded, but a leader changeover during this process could lead to
     /// trouble, so gating extension behavior via some flag in the client
     /// program is also a good idea.
-    extensions: Vec<u8>,
+    pub extensions: Vec<u8>,
 
     /// appended_at stores the time the leader first appended this log to it's
     /// log_store. Followers will observe the leader's time. It is not used for
@@ -95,7 +97,20 @@ pub struct Log {
     /// In general too the leader is not required to persist the log before
     /// delivering to followers although the current implementation happens to do
     /// this.
-    append_at: DateTime<Utc>,
+    pub append_at: DateTime<Utc>,
+}
+
+impl Log {
+    pub fn new(index: u64, term: u64, typ: LogType) -> Self {
+        Self {
+            index,
+            term,
+            typ,
+            data: vec![],
+            extensions: vec![],
+            append_at: Utc::now(),
+        }
+    }
 }
 
 pub enum LogStoreError {}
@@ -110,16 +125,16 @@ pub trait LogStore {
     fn last_index(&self) -> Result<u64>;
 
     /// get_log gets a log entry at a given index.
-    fn get_log(&self, index: u64, log: &mut Log) -> Result<()>;
+    fn get_log(&self, index: u64) -> Result<NonNull<Log>, Errors>;
 
     /// store_log stores a log entry
-    fn store_log(&self, log: &Log) -> Result<()>;
+    fn store_log(&mut self, log: Log) -> Result<(), Errors>;
 
     /// store_logs stores multiple log entries.
-    fn store_logs(&self, logs: Vec<&Log>) -> Result<()>;
+    fn store_logs(&mut self, logs: Vec<Log>) -> Result<(), Errors>;
 
     /// delete_range deletes a range of log entries. The range is inclusive.
-    fn delete_range(&self, min: u64, max: u64) -> Result<()>;
+    fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors>;
 }
 
 pub fn oldest_log(s: Box<dyn LogStore>) -> Result<Log> {
@@ -167,7 +182,7 @@ pub fn emit_log_store_metrics(
                     age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
                 }
             }
-            
+
             gauge!(key, age_ms as f64);
         },
     }
