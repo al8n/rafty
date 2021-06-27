@@ -1,13 +1,11 @@
-use std::fmt::{Display, Formatter, Result as FormatResult};
-use std::time::Duration;
-
 use crate::errors::Errors;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use crossbeam::channel::{select, Receiver};
 use derive_getters::Getters;
 use metrics::gauge;
-use std::ptr::NonNull;
+use std::fmt::{Display, Formatter, Result as FormatResult};
+use std::time::Duration;
 
 /// LogType describes various types of log entries
 #[derive(Debug, Copy, Clone)]
@@ -113,8 +111,6 @@ impl Log {
     }
 }
 
-pub enum LogStoreError {}
-
 /// LogStore is used to provide an interface for storing
 /// and retrieving logs in a durable fashion.
 pub trait LogStore {
@@ -155,9 +151,7 @@ pub fn oldest_log(s: Box<dyn LogStore>) -> Result<Log, Errors> {
             return Err(last_err);
         }
 
-        let l = s.get_log(first_idx);
-
-        match l {
+        match s.get_log(first_idx) {
             Ok(l) => {
                 // we found the oldest log, break the loop
                 return Ok(l);
@@ -173,17 +167,14 @@ pub fn oldest_log(s: Box<dyn LogStore>) -> Result<Log, Errors> {
 
 pub fn emit_log_store_metrics(
     s: Box<dyn LogStore>,
-    prefix: Vec<String>,
+    prefix: String,
     interval: Duration,
     stop_chan: Receiver<()>,
 ) {
-    let key = {
-        let pref: String = prefix.join(".");
-        pref + "oldestLogAge"
-    };
+    let key = prefix;
 
     select! {
-        recv(stop_chan) -> sig => return,
+        recv(stop_chan) -> _ => return,
         default(interval) => {
             // In error case emit 0 as the age
             let mut age_ms = 0i64;
@@ -193,19 +184,22 @@ pub fn emit_log_store_metrics(
                 }
             }
 
-            gauge!(key, age_ms as f64);
+            gauge!(vec![key, "oldest.log.age".to_string()].join("."), age_ms as f64);
         },
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::errors::Errors;
-    use crate::log::{oldest_log, Log, LogStore, LogType};
+    use crate::log::{emit_log_store_metrics, oldest_log, Log, LogStore, LogType};
+    use crate::mem_metrics::{
+        get_gauge, get_registered, setup_mem_metrics, MetricsBasic, MetricsType,
+    };
     use crate::mem_store::MemStore;
     use chrono::Utc;
-    use metrics::gauge;
-
+    use metrics::Key;
+    use std::thread::sleep;
+    use std::time::Duration;
 
     #[test]
     fn test_oldest_log() {
@@ -261,8 +255,7 @@ mod tests {
             let st = s.store_logs(case.logs);
             assert_eq!((), st.unwrap());
 
-            let got = oldest_log(box s);
-            match got {
+            match oldest_log(box s) {
                 Ok(got) => {
                     if case.want_err {
                         panic!("wanted error got nil");
@@ -276,5 +269,61 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_emit_log_store_metrics() {
+        setup_mem_metrics();
+
+        let mut s = MemStore::new();
+
+        let logs = vec![
+            Log {
+                index: 1234,
+                term: 1,
+                typ: LogType::Command,
+                data: vec![],
+                extensions: vec![],
+                append_at: Utc::now(),
+            },
+            Log {
+                index: 1235,
+                term: 1,
+                typ: LogType::Command,
+                data: vec![],
+                extensions: vec![],
+                append_at: Utc::now(),
+            },
+            Log {
+                index: 1236,
+                term: 2,
+                typ: LogType::Command,
+                data: vec![],
+                extensions: vec![],
+                append_at: Utc::now(),
+            },
+        ];
+
+        s.store_logs(logs).unwrap();
+
+        let (stop_ch_tx, stop_ch_rx) = crossbeam::channel::bounded::<()>(1);
+
+        std::thread::spawn(move || {
+            sleep(Duration::from_millis(5));
+            stop_ch_tx.send(()).unwrap();
+        });
+
+        emit_log_store_metrics(
+            box s,
+            "raft.test".to_string(),
+            std::time::Duration::from_millis(1),
+            stop_ch_rx,
+        );
+
+        let key = Key::from_static_name("raft.test.oldest.log.age");
+        let gv = get_gauge(key.clone()).unwrap();
+        assert_eq!(format!("{:?}", gv), "Absolute(1.0)".to_string());
+        let bi = get_registered(key.clone()).unwrap();
+        assert_eq!(bi, MetricsBasic::from_type(MetricsType::Gauge));
     }
 }

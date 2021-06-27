@@ -1,6 +1,4 @@
-use parking_lot::Mutex;
 use std::fmt::{Display, Formatter, Result as FormatResult};
-use std::sync::Arc;
 
 /// State captures the state of a Raft node: Follower, Candidate, Leader, or Shutdown
 #[derive(Debug, Copy, Clone)]

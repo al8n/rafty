@@ -5,6 +5,7 @@ extern crate lazy_static;
 mod commands;
 pub mod errors;
 mod log;
+mod mem_metrics;
 mod mem_store;
 pub mod pb;
 mod stable;
