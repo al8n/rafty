@@ -196,8 +196,8 @@ mod tests {
         get_gauge, get_registered, setup_mem_metrics, MetricsBasic, MetricsType,
     };
     use crate::mem_store::MemStore;
-    use chrono::Utc;
-    use metrics::Key;
+    use chrono::{DateTime, Utc};
+    use metrics::{GaugeValue, Key};
     use std::thread::sleep;
     use std::time::Duration;
 
@@ -274,6 +274,7 @@ mod tests {
     #[test]
     fn test_emit_log_store_metrics() {
         setup_mem_metrics();
+        let start = Utc::now();
 
         let mut s = MemStore::new();
 
@@ -322,7 +323,20 @@ mod tests {
 
         let key = Key::from_static_name("raft.test.oldest.log.age");
         let gv = get_gauge(key.clone()).unwrap();
-        assert_eq!(format!("{:?}", gv), "Absolute(1.0)".to_string());
+
+        match gv {
+            GaugeValue::Absolute(val) => {
+                assert!(
+                    val <= Utc::now().signed_duration_since(start).num_milliseconds() as f64,
+                    "max age before test start: {}",
+                    val
+                );
+                assert!(val >= 1.0, "max age less than interval:  {}", val);
+            }
+            GaugeValue::Increment(_) => panic!("expected absolute value, but got increment value"),
+            GaugeValue::Decrement(_) => panic!("expected absolute value, but got decrement value"),
+        }
+        
         let bi = get_registered(key.clone()).unwrap();
         assert_eq!(bi, MetricsBasic::from_type(MetricsType::Gauge));
     }
