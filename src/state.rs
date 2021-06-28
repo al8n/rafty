@@ -1,7 +1,8 @@
-use std::fmt::{Display, Formatter, Result as FormatResult};
+use parse_display::{Display, FromStr};
 
 /// State captures the state of a Raft node: Follower, Candidate, Leader, or Shutdown
-#[derive(Debug, Copy, Clone)]
+#[derive(Display, FromStr, Debug, Copy, Clone, Eq, PartialEq)]
+#[display(style = "CamelCase")]
 pub enum StateType {
     /// Follower is the initial state of a Raft node.
     Follower,
@@ -14,17 +15,6 @@ pub enum StateType {
 
     /// Shutdown is the terminal state of a Raft node
     Shutdown,
-}
-
-impl Display for StateType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FormatResult {
-        match self {
-            StateType::Follower => write!(f, "Follower"),
-            StateType::Leader => write!(f, "Leader"),
-            StateType::Candidate => write!(f, "Candidate"),
-            StateType::Shutdown => write!(f, "Shutdown"),
-        }
-    }
 }
 
 pub struct State {

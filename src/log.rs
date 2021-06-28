@@ -4,11 +4,12 @@ use chrono::{DateTime, Utc};
 use crossbeam::channel::{select, Receiver};
 use derive_getters::Getters;
 use metrics::gauge;
-use std::fmt::{Display, Formatter, Result as FormatResult};
+use parse_display::{Display, FromStr};
 use std::time::Duration;
 
 /// LogType describes various types of log entries
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display, FromStr)]
+#[display(style = "CamelCase")]
 pub enum LogType {
     /// Command is applied to a user FSM
     Command,
@@ -37,20 +38,6 @@ pub enum LogType {
     /// created when a server is added, removed, promoted, etc. Only used
     /// when protocol version 1 or greater is in use.
     Configuration,
-}
-
-impl Display for LogType {
-    /// fmt returns LogType as a human readable string
-    fn fmt(&self, f: &mut Formatter<'_>) -> FormatResult {
-        match self {
-            LogType::Command => write!(f, "Command"),
-            LogType::Noop => write!(f, "Noop"),
-            LogType::AddPeerDeprecated => write!(f, "AddPeerDeprecated"),
-            LogType::RemovePeerDeprecated => write!(f, "RemovePeerDeprecated"),
-            LogType::Barrier => write!(f, "Barrier"),
-            LogType::Configuration => write!(f, "Configuration"),
-        }
-    }
 }
 
 /// Log entries are replicated to all members of the Raft cluster
@@ -336,7 +323,7 @@ mod tests {
             GaugeValue::Increment(_) => panic!("expected absolute value, but got increment value"),
             GaugeValue::Decrement(_) => panic!("expected absolute value, but got decrement value"),
         }
-        
+
         let bi = get_registered(key.clone()).unwrap();
         assert_eq!(bi, MetricsBasic::from_type(MetricsType::Gauge));
     }

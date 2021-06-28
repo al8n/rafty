@@ -1,4 +1,3 @@
-use lazy_static::lazy_static;
 use metrics::{set_boxed_recorder, GaugeValue, Key, Recorder, Unit};
 use parking_lot::{Once, RwLock};
 use std::collections::HashMap;
@@ -74,6 +73,7 @@ impl MetricsBasic {
         }
     }
 
+    /// `from_type` returns a `MetricsBasic` according to `MetricsType`
     pub fn from_type(typ: MetricsType) -> Self {
         Self {
             typ,
@@ -82,6 +82,7 @@ impl MetricsBasic {
         }
     }
 
+    /// `from_type_and_unit` returns a `MetricsBasic` according to `MetricsType` and `metrics::Unit`
     pub fn from_type_and_unit(typ: MetricsType, unit: Unit) -> Self {
         Self {
             typ,
@@ -198,28 +199,28 @@ impl MemMetrics {
         }
     }
 
-    pub fn get_registered(&self, key: Key) -> Option<MetricsBasic> {
+    fn get_registered(&self, key: Key) -> Option<MetricsBasic> {
         match self.registered.read().get(&key) {
             None => None,
             Some(v) => Some(v.clone()),
         }
     }
 
-    pub fn get_gauge(&self, key: Key) -> Option<GaugeValue> {
+    fn get_gauge(&self, key: Key) -> Option<GaugeValue> {
         match self.gauge.read().get(&key) {
             None => None,
             Some(v) => Some(v.clone()),
         }
     }
 
-    pub fn get_counter(&self, key: Key) -> Option<u64> {
+    fn get_counter(&self, key: Key) -> Option<u64> {
         match self.counter.read().get(&key) {
             None => None,
             Some(v) => Some(*v),
         }
     }
 
-    pub fn get_histogram(&self, key: Key) -> Option<f64> {
+    fn get_histogram(&self, key: Key) -> Option<f64> {
         match self.histogram.read().get(&key) {
             None => None,
             Some(v) => Some(*v),
@@ -227,24 +228,29 @@ impl MemMetrics {
     }
 }
 
+/// `setup_mem_metrics` will set a global in-memory metrics recorder
 pub fn setup_mem_metrics() {
     SETUP.call_once(|| {
         set_boxed_recorder(box RECORDER.clone()).unwrap();
     });
 }
 
+/// `get_registered` returns the registered metric information according to the `metrics::Key`, if the key not exist, return `None`.
 pub fn get_registered(key: Key) -> Option<MetricsBasic> {
     RECORDER.get_registered(key)
 }
 
+/// `get_gauge` returns a gauge metric according to the `metrics::Key`, if the key not exist, return `None`.
 pub fn get_gauge(key: Key) -> Option<GaugeValue> {
     RECORDER.get_gauge(key)
 }
 
+/// `get_counter` returns a counter metric according to the `metrics::Key`, if the key not exist, return `None`.
 pub fn get_counter(key: Key) -> Option<u64> {
     RECORDER.get_counter(key)
 }
 
+/// `get_histogram` returns a histogram metric according to the `metrics::Key`, if the key not exist, return `None`.
 pub fn get_histogram(key: Key) -> Option<f64> {
     RECORDER.get_histogram(key)
 }
