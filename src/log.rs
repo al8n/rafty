@@ -154,21 +154,21 @@ pub trait LogStore {
 
     /// `emit_log_store_metrics` emits the information to the metrics
     fn emit_log_store_metrics(&self, prefix: String, interval: Duration, stop_chan: Receiver<()>) {
-        let key = prefix;
-
-        select! {
-            recv(stop_chan) -> _ => return,
-            default(interval) => {
-                // In error case emit 0 as the age
-                let mut age_ms = 0i64;
-                if let Ok(l) = self.oldest_log() {
-                    if l.append_at.timestamp_millis() != 0 {
-                        age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
+        loop {
+            select! {
+                recv(stop_chan) -> _ => return,
+                default(interval) => {
+                    // In error case emit 0 as the age
+                    let mut age_ms = 0i64;
+                    if let Ok(l) = self.oldest_log() {
+                        if l.append_at.timestamp_millis() != 0 {
+                            age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
+                        }
                     }
-                }
 
-                gauge!(vec![key, "oldest.log.age".to_string()].join("."), age_ms as f64);
-            },
+                    gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
+                },
+            }
         }
     }
 }
@@ -241,15 +241,11 @@ mod tests {
 
             match s.oldest_log() {
                 Ok(got) => {
-                    if case.want_err {
-                        panic!("wanted error got nil");
-                    }
+                    assert!(!case.want_err, "wanted error but got nil");
                     assert_eq!(got.index, case.want_idx);
                 }
                 Err(e) => {
-                    if !case.want_err {
-                        panic!("wanted no error got {}", e);
-                    }
+                    assert!(case.want_err, "wanted no error got {}", e);
                 }
             }
         }
@@ -293,14 +289,14 @@ mod tests {
 
         let (stop_ch_tx, stop_ch_rx) = crossbeam::channel::bounded::<()>(1);
 
-        std::thread::spawn(move || {
-            sleep(Duration::from_millis(5));
+        let jh = std::thread::spawn(move || {
+            sleep(Duration::from_millis(1000));
             stop_ch_tx.send(()).unwrap();
         });
 
         s.emit_log_store_metrics(
             "raft.test".to_string(),
-            std::time::Duration::from_millis(1),
+            std::time::Duration::from_millis(100),
             stop_ch_rx,
         );
 
@@ -322,5 +318,7 @@ mod tests {
 
         let bi = get_registered(key.clone()).unwrap();
         assert_eq!(bi, MetricsBasic::from_type(MetricsType::Gauge));
+
+        jh.join().unwrap();
     }
 }
