@@ -39,11 +39,24 @@ fn new_sf() -> Sonyflake {
 
 #[cfg(test)]
 mod test {
-    use crate::idgen::IDGen;
+    use super::*;
+    use std::time::Duration;
 
     #[test]
     fn test_next_id() {
-        let v = IDGen::new().next_id();
+        let mut g = IDGen::new();
+        let v = g.next_id();
+        println!("{}", v);
         assert!(v > 0);
+
+        std::thread::sleep(Duration::from_millis(100));
+        let v1 = g.next_id();
+        println!("{}", v);
+        assert!(v1 > 0);
+
+        std::thread::sleep(Duration::from_millis(100));
+        let v2 = new_sf().next_id().unwrap();
+        println!("{}", v2);
+        assert!(v2 > 0)
     }
 }
