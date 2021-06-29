@@ -12,6 +12,7 @@ use crate::Bytes;
 /// MemStore implements the LogStore and StableStore trait.
 /// It should NOT EVER be used for production. It is used only for
 /// unit tests. Use the MDBStore implementation instead.
+#[derive(Clone)]
 pub struct MemStore {
     core: Arc<RwLock<MemStoreCore>>,
 }

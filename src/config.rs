@@ -1,8 +1,11 @@
+use crate::errors::Errors;
+use crossbeam::channel::Receiver;
 use parse_display::{Display, FromStr};
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedReceiver;
 
 /// `Config` provides any necessary configuration for the `Raft` server.
+#[derive(Debug, Clone)]
 pub struct Config {
     /// `heartbeat_timeout` specifies the time in follower state without a leader before we attempt an election
     heartbeat_timeout: Duration,
@@ -62,7 +65,7 @@ pub struct Config {
     /// `notify_ch` is used to provide a channel that will be notified of leadership
     /// changes. Raft will block writing to this channel, so it should either be
     /// buffered or aggressively consumed.
-    notify_ch: UnboundedReceiver<bool>,
+    notify_ch: Receiver<bool>,
 
     // TODO: log related fields start
     /// `log_output` is used as a sink for logs, unless `logger` is specified.
@@ -86,7 +89,8 @@ pub struct Config {
 }
 
 impl Config {
-    fn new(local_id: ServerID, notify_ch: UnboundedReceiver<bool>) -> Self {
+    /// `new` returns a `Config` with usable defaults.
+    pub fn new(local_id: ServerID, notify_ch: Receiver<bool>) -> Self {
         Self {
             heartbeat_timeout: Duration::from_millis(1000),
             election_timeout: Duration::from_millis(1000),
@@ -102,6 +106,93 @@ impl Config {
             notify_ch,
             no_snapshot_restore_on_start: false,
             skip_startup: false,
+        }
+    }
+
+    /// `validate_config` is used to validate a sane configuration
+    pub fn validate_config(&self) -> Result<(), Errors> {
+        if self.local_id == 0 {
+            return Err(Errors::EmptyLocalID);
+        }
+
+        if self.heartbeat_timeout < Duration::from_millis(5) {
+            return Err(Errors::ShortHeartbeatTimeout);
+        }
+
+        if self.election_timeout < Duration::from_millis(5) {
+            return Err(Errors::ShortElectionTimeout);
+        }
+
+        if self.commit_timeout < Duration::from_millis(1) {
+            return Err(Errors::ShortCommitTimeout);
+        }
+
+        if self.max_append_entries > 1024 {
+            return Err(Errors::LargeMaxAppendEntries);
+        }
+
+        if self.snapshot_interval < Duration::from_millis(5) {
+            return Err(Errors::ShortSnapshotInterval);
+        }
+
+        if self.leader_lease_timeout < Duration::from_millis(5) {
+            return Err(Errors::ShortLeaderLeaseTimeout);
+        }
+
+        if self.leader_lease_timeout > self.heartbeat_timeout {
+            return Err(Errors::LeaderLeaseTimeoutLargerThanHeartbeatTimeout);
+        }
+
+        if self.election_timeout < self.heartbeat_timeout {
+            return Err(Errors::ElectionTimeoutSmallerThanHeartbeatTimeout);
+        }
+
+        Ok(())
+    }
+}
+
+/// `ReloadableConfig` is the subset of `Config` that may be reconfigured during
+/// runtime using raft.ReloadConfig. We choose to duplicate fields over embedding
+/// or accepting a `Config` but only using specific fields to keep the API clear.
+/// Reconfiguring some fields is potentially dangerous so we should only
+/// selectively enable it for fields where that is allowed.
+pub struct ReloadableConfig {
+    /// `trailing_logs` controls how many logs we leave after a snapshot. This is used
+    /// so that we can quickly replay logs on a follower instead of being forced to
+    /// send an entire snapshot. The value passed here updates the setting at runtime
+    /// which will take effect as soon as the next snapshot completes and truncation
+    // occurs.
+    trailing_logs: u64,
+
+    /// `snapshot_interval` controls how often we check if we should perform a snapshot.
+    /// We randomly stagger between this value and 2x this value to avoid the entire
+    /// cluster from performing a snapshot at once.
+    snapshot_interval: Duration,
+
+    /// `snapshot_threshold` controls how many outstanding logs there must be before
+    /// we perform a snapshot. This is to prevent excessive snapshots when we can
+    /// just replay a small set of logs.
+    snapshot_threshold: u64,
+}
+
+impl ReloadableConfig {
+    /// `apply` sets the reloadable fields on the passed Config to the values in
+    /// `ReloadableConfig`. It returns a copy of `Config` with the fields from this
+    /// `ReloadableConfig` set.
+    pub fn apply(&self, to: Config) -> Config {
+        let mut toc = to.clone();
+        toc.trailing_logs = self.trailing_logs;
+        toc.snapshot_threshold = self.snapshot_threshold;
+        toc.snapshot_interval = self.snapshot_interval;
+        toc
+    }
+
+    /// `from_config` copies the reloadable fields from the passed `Config`.
+    pub fn from_config(from: Config) -> Self {
+        Self {
+            trailing_logs: from.trailing_logs,
+            snapshot_interval: from.snapshot_interval,
+            snapshot_threshold: from.snapshot_threshold,
         }
     }
 }
@@ -129,7 +220,18 @@ pub enum ServerSuffrage {
 pub type ServerID = u64;
 
 /// `ServerAddress` is a network address for a server that a transport can contact.
-pub type ServerAddress = String;
+// pub type ServerAddress = String;
+#[derive(Display, FromStr, Copy, Clone, Eq, PartialEq, Debug)]
+#[display(style = "CamelCase")]
+pub enum ServerAddress {
+    /// `IPv4` stands for an IPv4 address
+    #[display("IPv4: {0}")]
+    IPv4(Ipv4Addr),
+
+    /// `IPv6` stands for an IPv6 address
+    #[display("IPv6: {0}")]
+    IPv6(Ipv6Addr),
+}
 
 /// `Server` tracks the information about a single server in a configuration.
 pub struct Server {
@@ -150,7 +252,7 @@ pub struct Server {
 /// The servers are listed no particular order, but each should only appear once.
 /// These entries are appended to the log during membership changes.
 pub struct Configuration {
-    servers: Vec<Server>
+    servers: Vec<Server>,
 }
 
 #[derive(Display, FromStr, Debug, Copy, Clone, Eq, PartialEq)]
@@ -168,4 +270,3 @@ pub enum ConfigurationChangeCommand {
     /// into a Voter.
     Promote,
 }
-

@@ -11,30 +11,30 @@ use std::time::Duration;
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display, FromStr)]
 #[display(style = "CamelCase")]
 pub enum LogType {
-    /// Command is applied to a user FSM
+    /// `Command` is applied to a user FSM
     Command,
 
-    /// Noop is used to assert leadership
+    /// `Noop` is used to assert leadership
     Noop,
 
-    /// AddPeerDeprecated is used to add a new peer, This should only be used with
+    /// `AddPeerDeprecated` is used to add a new peer, This should only be used with
     /// older protocol versions designed to be compatible with unversioned
     /// Raft servers. See comments in config.rs for details
     AddPeerDeprecated,
 
-    /// RemovePeerDeprecated is used to remove an existing peer. This should only be
+    /// `RemovePeerDeprecated` is used to remove an existing peer. This should only be
     /// used with older protocol versions designed to be compatible with
     /// unversioned Raft servers. See comments in config.rs for details.
     RemovePeerDeprecated,
 
-    /// Barrier is used to ensure all preceding operations have been
+    /// `Barrier` is used to ensure all preceding operations have been
     /// applied to the FSM. It is similar to Noop, but instead of returning
     /// once committed, it only returns once the FSM manager acks it. Otherwise
     /// it is possible there are operations committed but not yet applied to
     /// the FSM
     Barrier,
 
-    /// Configuration establishes a membership change configuration. It is
+    /// `Configuration` establishes a membership change configuration. It is
     /// created when a server is added, removed, promoted, etc. Only used
     /// when protocol version 1 or greater is in use.
     Configuration,
@@ -101,84 +101,81 @@ impl Log {
 /// LogStore is used to provide an interface for storing
 /// and retrieving logs in a durable fashion.
 pub trait LogStore {
-    /// first_index returns the first index written. 0 for no entries.
+    /// `first_index` returns the first index written. 0 for no entries.
     fn first_index(&self) -> Result<u64, Errors>;
 
-    /// last_index returns the last index written. 0 for no entries.
+    /// `last_index` returns the last index written. 0 for no entries.
     fn last_index(&self) -> Result<u64, Errors>;
 
-    /// get_log gets a log entry at a given index.
+    /// `get_log` gets a log entry at a given index.
     fn get_log(&self, index: u64) -> Result<Log, Errors>;
 
-    /// store_log stores a log entry
+    /// `store_log` stores a log entry
     fn store_log(&mut self, log: Log) -> Result<(), Errors>;
 
-    /// store_logs stores multiple log entries.
+    /// `store_logs` stores multiple log entries.
     fn store_logs(&mut self, logs: Vec<Log>) -> Result<(), Errors>;
 
-    /// delete_range deletes a range of log entries. The range is inclusive.
+    /// `delete_range` deletes a range of log entries. The range is inclusive.
     fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors>;
-}
 
-pub fn oldest_log(s: Box<dyn LogStore>) -> Result<Log, Errors> {
-    // We might get unlucky and have a truncate right between getting first log
-    // index and fetching it so keep trying until we succeed or hard fail.
-    let mut last_fail_idx = 0;
-    let mut last_err: Errors = Errors::LogNotFound;
+    /// `oldest_log` returns the oldest log in the store.
+    fn oldest_log(&self) -> Result<Log, Errors> {
+        // We might get unlucky and have a truncate right between getting first log
+        // index and fetching it so keep trying until we succeed or hard fail.
+        let mut last_fail_idx = 0;
+        let mut last_err: Errors = Errors::LogNotFound;
 
-    loop {
-        let first_idx = s.first_index()?;
-        if first_idx == 0 {
-            return Err(Errors::LogNotFound);
-        }
-
-        if first_idx == last_fail_idx {
-            // Got same index as last time around which errored, don't bother trying
-            // to fetch it again just return the error
-            return Err(last_err);
-        }
-
-        match s.get_log(first_idx) {
-            Ok(l) => {
-                // we found the oldest log, break the loop
-                return Ok(l);
+        loop {
+            let first_idx = self.first_index()?;
+            if first_idx == 0 {
+                return Err(Errors::LogNotFound);
             }
-            Err(e) => {
-                // We failed, keep trying to see if there is a new first_idx
-                last_err = e;
-                last_fail_idx = first_idx;
+
+            if first_idx == last_fail_idx {
+                // Got same index as last time around which errored, don't bother trying
+                // to fetch it again just return the error
+                return Err(last_err);
+            }
+
+            match self.get_log(first_idx) {
+                Ok(l) => {
+                    // we found the oldest log, break the loop
+                    return Ok(l.clone());
+                }
+                Err(e) => {
+                    // We failed, keep trying to see if there is a new first_idx
+                    last_err = e;
+                    last_fail_idx = first_idx;
+                }
             }
         }
     }
-}
 
-pub fn emit_log_store_metrics(
-    s: Box<dyn LogStore>,
-    prefix: String,
-    interval: Duration,
-    stop_chan: Receiver<()>,
-) {
-    let key = prefix;
+    /// `emit_log_store_metrics` emits the information to the metrics
+    fn emit_log_store_metrics(&self, prefix: String, interval: Duration, stop_chan: Receiver<()>) {
+        let key = prefix;
 
-    select! {
-        recv(stop_chan) -> _ => return,
-        default(interval) => {
-            // In error case emit 0 as the age
-            let mut age_ms = 0i64;
-            if let Ok(l) = oldest_log(s) {
-                if l.append_at.timestamp_millis() != 0 {
-                    age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
+        select! {
+            recv(stop_chan) -> _ => return,
+            default(interval) => {
+                // In error case emit 0 as the age
+                let mut age_ms = 0i64;
+                if let Ok(l) = self.oldest_log() {
+                    if l.append_at.timestamp_millis() != 0 {
+                        age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
+                    }
                 }
-            }
 
-            gauge!(vec![key, "oldest.log.age".to_string()].join("."), age_ms as f64);
-        },
+                gauge!(vec![key, "oldest.log.age".to_string()].join("."), age_ms as f64);
+            },
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::log::{emit_log_store_metrics, oldest_log, Log, LogStore, LogType};
+    use crate::log::{Log, LogStore, LogType};
     use crate::mem_metrics::{
         get_gauge, get_registered, setup_mem_metrics, MetricsBasic, MetricsType,
     };
@@ -242,7 +239,7 @@ mod tests {
             let st = s.store_logs(case.logs);
             assert_eq!((), st.unwrap());
 
-            match oldest_log(box s) {
+            match s.oldest_log() {
                 Ok(got) => {
                     if case.want_err {
                         panic!("wanted error got nil");
@@ -301,8 +298,7 @@ mod tests {
             stop_ch_tx.send(()).unwrap();
         });
 
-        emit_log_store_metrics(
-            box s,
+        s.emit_log_store_metrics(
             "raft.test".to_string(),
             std::time::Duration::from_millis(1),
             stop_ch_rx,

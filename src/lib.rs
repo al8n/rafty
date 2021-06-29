@@ -1,5 +1,5 @@
 #![feature(box_syntax)]
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 
 extern crate derive_getters;
 
@@ -30,6 +30,7 @@ pub mod snapshot;
 
 /// The configuration for a Raft node
 pub mod config;
+mod idgen;
 
 /// `Bytes` is alias for `Vec<u8>`
 pub type Bytes = Vec<u8>;
