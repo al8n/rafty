@@ -1,3 +1,5 @@
+> Note: This repo is in the very initial stage, the core functions of Raft have not been implemented.
+
 <div align="center">
 <h1>tokio-raft</h1>
 </div>
@@ -20,7 +22,7 @@ English | [简体中文](README-zh_CN.md)
 #### License
 
 <sup>
-Licensed under <a href="LICENSE-APACHE">Apache License, Version
+Licensed under <a href="LICENSE">Apache License, Version
 2.0</a>.
 </sup>
 <br>
