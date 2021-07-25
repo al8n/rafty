@@ -4,6 +4,20 @@ use parse_display::{Display, FromStr};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
+static DEFAULT_HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(1000);
+static DEFAULT_ELECTION_TIMEOUT: Duration = Duration::from_millis(1000);
+static DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_millis(50);
+static DEFAULT_MAX_APPEND_ENTRIES: u64 = 64;
+static DEFAULT_BATCH_APPLY_CH: bool = false;
+static DEFAULT_SHUTDOWN_ON_REMOVE: bool = true;
+static DEFAULT_TRAILING_LOGS: u64 = 10240;
+static DEFAULT_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(120);
+static DEFAULT_SNAPSHOT_THRESHOLD: u64 = 8192;
+static DEFAULT_LEADER_LEASE_TIMEOUT: Duration = Duration::from_millis(500);
+static DEFAULT_LOG_LEVEL: &'static str = "DEBUG";
+static DEFAULT_NO_SNAPSHOT_RESTORE_ON_START: bool = false;
+static DEFAULT_STARTUP: bool = false;
+
 /// `ProtocolVersion` is the version of the protocol (which includes RPC messages
 /// as well as Raft-specific log entries) that this server can _understand_. Use
 /// the `protocol_version` member of the `Config` object to control the version of
@@ -298,19 +312,19 @@ impl Default for ConfigBuilder {
     fn default() -> Self {
         Self {
             protocol_version: Some(ProtocolVersion::ProtocolVersionMax),
-            heartbeat_timeout: Some(Duration::from_millis(1000)),
-            election_timeout: Some(Duration::from_millis(1000)),
-            commit_timeout: Some(Duration::from_millis(50)),
-            max_append_entries: Some(64),
-            batch_apply_ch: Some(false),
-            shut_down_on_remove: Some(true),
-            trailing_logs: Some(10240),
-            snapshot_interval: Some(Duration::from_secs(120)),
-            snapshot_threshold: Some(8192),
-            leader_lease_timeout: Some(Duration::from_millis(500)),
+            heartbeat_timeout: Some(DEFAULT_HEARTBEAT_TIMEOUT),
+            election_timeout: Some(DEFAULT_ELECTION_TIMEOUT),
+            commit_timeout: Some(DEFAULT_COMMIT_TIMEOUT),
+            max_append_entries: Some(DEFAULT_MAX_APPEND_ENTRIES),
+            batch_apply_ch: Some(DEFAULT_BATCH_APPLY_CH),
+            shut_down_on_remove: Some(DEFAULT_SHUTDOWN_ON_REMOVE),
+            trailing_logs: Some(DEFAULT_TRAILING_LOGS),
+            snapshot_interval: Some(DEFAULT_SNAPSHOT_INTERVAL),
+            snapshot_threshold: Some(DEFAULT_SNAPSHOT_THRESHOLD),
+            leader_lease_timeout: Some(DEFAULT_LEADER_LEASE_TIMEOUT),
             local_id: None,
-            no_snapshot_restore_on_start: Some(false),
-            skip_startup: Some(false),
+            no_snapshot_restore_on_start: Some(DEFAULT_NO_SNAPSHOT_RESTORE_ON_START),
+            skip_startup: Some(DEFAULT_STARTUP),
         }
     }
 }
@@ -318,117 +332,103 @@ impl Default for ConfigBuilder {
 impl ConfigBuilder {
     /// `set_protocol_version` set the value of `protocol_version` in `ConfigBuilder`.
     #[inline]
-    pub const fn set_protocol_version(self, protocol_version: ProtocolVersion) -> Self {
-        let mut n = self;
-        n.protocol_version = Some(protocol_version);
-        n
+    pub const fn set_protocol_version(mut self, protocol_version: ProtocolVersion) -> Self {
+        self.protocol_version = Some(protocol_version);
+        self
     }
 
     /// `set_local_id` set the value of `local_id` in `ConfigBuilder`.
     #[inline]
-    pub const fn set_local_id(self, id: ServerID) -> Self {
-        let mut n = self;
-        n.local_id = Some(id);
-        n
+    pub const fn set_local_id(mut self, id: ServerID) -> Self {
+        self.local_id = Some(id);
+        self
     }
 
     /// `set_heartbeat_timeout` set the value of `heartbeat_timeout` in `ConfigBuilder`.
     #[inline]
-    pub const fn set_heartbeat_timeout(self, timeout: Duration) -> Self {
-        let mut n = self;
-        n.heartbeat_timeout = Some(timeout);
-        n
+    pub const fn set_heartbeat_timeout(mut self, timeout: Duration) -> Self {
+        self.heartbeat_timeout = Some(timeout);
+        self
     }
 
     /// `set_election_timeout` set the value of `election_timeout` in `ConfigBuilder`.
     #[inline]
-    pub const fn set_election_timeout(self, timeout: Duration) -> Self {
-        let mut n = self;
-        n.election_timeout = Some(timeout);
-        n
+    pub const fn set_election_timeout(mut self, timeout: Duration) -> Self {
+        self.election_timeout = Some(timeout);
+        self
     }
 
     /// `set_commit_timeout` set the value of `commit_timeout` in `ConfigBuilder`.
     #[inline]
-    pub const fn set_commit_timeout(self, timeout: Duration) -> Self {
-        let mut n = self;
-        n.commit_timeout = Some(timeout);
-        n
+    pub const fn set_commit_timeout(mut self, timeout: Duration) -> Self {
+        self.commit_timeout = Some(timeout);
+        self
     }
 
     /// `set_max_append_entries` set the value of `max_append_entries` in `ConfigBuilder`.
     #[inline]
-    pub const fn set_max_append_entries(self, max_entries: u64) -> Self {
-        let mut n = self;
-        n.max_append_entries = Some(max_entries);
-        n
+    pub const fn set_max_append_entries(mut self, max_entries: u64) -> Self {
+        self.max_append_entries = Some(max_entries);
+        self
     }
 
     /// `set_batch_apply_ch` set the value of `batch_apply_ch` in `ConfigBuilder`.
     #[inline]
-    pub const fn set_batch_apply_ch(self, batch_apply_ch: bool) -> Self {
-        let mut n = self;
-        n.batch_apply_ch = Some(batch_apply_ch);
-        n
+    pub const fn set_batch_apply_ch(mut self, batch_apply_ch: bool) -> Self {
+        self.batch_apply_ch = Some(batch_apply_ch);
+        self
     }
 
     /// `set_shut_down_on_remove` set the value of `shut_down_on_remove` in `ConfigBuilder`.
     #[inline]
-    pub const fn set_shut_down_on_remove(self, shut_down_on_remove: bool) -> Self {
-        let mut n = self;
-        n.shut_down_on_remove = Some(shut_down_on_remove);
-        n
+    pub const fn set_shut_down_on_remove(mut self, shut_down_on_remove: bool) -> Self {
+        self.shut_down_on_remove = Some(shut_down_on_remove);
+        self
     }
 
     /// `set_trailing_logs` set the value of `trailing_logs` in `ConfigBuilder`.
     #[inline]
-    pub const fn set_trailing_logs(self, trailing_logs: u64) -> Self {
-        let mut n = self;
-        n.trailing_logs = Some(trailing_logs);
-        n
+    pub const fn set_trailing_logs(mut self, trailing_logs: u64) -> Self {
+        self.trailing_logs = Some(trailing_logs);
+        self
     }
 
     /// `set_snapshot_interval` set the value of `snapshot_interval` in `ConfigBuilder`
     #[inline]
-    pub const fn set_snapshot_interval(self, timeout: Duration) -> Self {
-        let mut n = self;
-        n.snapshot_interval = Some(timeout);
-        n
+    pub const fn set_snapshot_interval(mut self, timeout: Duration) -> Self {
+        self.snapshot_interval = Some(timeout);
+        self
     }
 
     /// `set_snapshot_threshold` set the value of `snapshot_threshold` in `ConfigBuilder`
     #[inline]
-    pub const fn set_snapshot_threshold(self, threshold: u64) -> Self {
-        let mut n = self;
-        n.snapshot_threshold = Some(threshold);
-        n
+    pub const fn set_snapshot_threshold(mut self, threshold: u64) -> Self {
+        self.snapshot_threshold = Some(threshold);
+        self
     }
 
     /// `set_leader_lease_timeout` set the value of `leader_lease_timeout` in `ConfigBuilder`
     #[inline]
-    pub const fn set_leader_lease_timeout(self, timeout: Duration) -> Self {
-        let mut n = self;
-        n.leader_lease_timeout = Some(timeout);
-        n
+    pub const fn set_leader_lease_timeout(mut self, timeout: Duration) -> Self {
+        self.leader_lease_timeout = Some(timeout);
+        self
     }
 
     /// `set_no_snapshot_restore_on_start` set the value of `no_snapshot_restore_on_start` in `ConfigBuilder`
     #[inline]
     pub const fn set_no_snapshot_restore_on_start(
-        self,
+        mut self,
         no_snapshot_restore_on_start: bool,
     ) -> Self {
-        let mut n = self;
-        n.no_snapshot_restore_on_start = Some(no_snapshot_restore_on_start);
-        n
+        self.no_snapshot_restore_on_start = Some(no_snapshot_restore_on_start);
+        self
     }
 
     /// `set_skip_startup` set the value of `skip_startup` in `ConfigBuilder`
     #[inline]
-    pub const fn set_skip_startup(self, skip_startup: bool) -> Self {
-        let mut n = self;
-        n.skip_startup = Some(skip_startup);
-        n
+    pub const fn set_skip_startup(mut self, skip_startup: bool) -> Self {
+        self.skip_startup = Some(skip_startup);
+        self
     }
 
     /// `finalize` returns a `Result<Config, Errors>`
@@ -485,6 +485,10 @@ impl ReloadableConfig {
     /// `ReloadableConfig`. It returns a copy of `Config` with the fields from this
     /// `ReloadableConfig` set.
     pub fn apply(&self, to: Config) -> Config {
+        if self == &to {
+            return to;
+        }
+
         let mut toc = to.clone();
         toc.trailing_logs = self.trailing_logs;
         toc.snapshot_threshold = self.snapshot_threshold;
@@ -499,6 +503,24 @@ impl ReloadableConfig {
             snapshot_interval: from.snapshot_interval,
             snapshot_threshold: from.snapshot_threshold,
         }
+    }
+}
+
+impl Default for ReloadableConfig {
+    fn default() -> Self {
+        Self {
+            trailing_logs: DEFAULT_TRAILING_LOGS,
+            snapshot_interval: DEFAULT_SNAPSHOT_INTERVAL,
+            snapshot_threshold: DEFAULT_SNAPSHOT_THRESHOLD,
+        }
+    }
+}
+
+impl PartialEq<Config> for ReloadableConfig {
+    fn eq(&self, other: &Config) -> bool {
+        self.trailing_logs == other.trailing_logs
+            && self.snapshot_threshold == other.snapshot_threshold
+            && self.snapshot_interval == other.snapshot_interval
     }
 }
 
@@ -603,5 +625,37 @@ mod test {
             .finalize(rx)
             .unwrap();
         assert!(!config.skip_startup);
+    }
+
+    #[test]
+    fn test_reloadable_config() {
+        let (_, rx) = unbounded::<bool>();
+        let config = ConfigBuilder::default()
+            .set_local_id(123)
+            .finalize(rx)
+            .unwrap();
+        let rc = ReloadableConfig {
+            trailing_logs: DEFAULT_TRAILING_LOGS,
+            snapshot_interval: Duration::from_secs(60),
+            snapshot_threshold: DEFAULT_SNAPSHOT_THRESHOLD,
+        };
+
+        assert_eq!(
+            rc.apply(config.clone()).snapshot_interval,
+            Duration::from_secs(60)
+        );
+
+        let rc = ReloadableConfig::from_config(config);
+        assert_eq!(rc.snapshot_interval, Duration::from_secs(120));
+
+        let (_, rx) = unbounded::<bool>();
+        let rc = ReloadableConfig::default();
+        let config = ConfigBuilder::default()
+            .set_local_id(123)
+            .finalize(rx)
+            .unwrap();
+        assert!(rc == config.clone());
+        let rc = ReloadableConfig::default();
+        assert_eq!(rc.apply(config.clone()).trailing_logs, config.trailing_logs);
     }
 }
