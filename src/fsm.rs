@@ -3,7 +3,6 @@ use crate::log::Log;
 use crate::snapshot::SnapshotSink;
 use anyhow::Result;
 use chrono::Utc;
-use std::io::Error;
 
 /// `FSM` provides an trait that can be implemented by
 /// clients to make use of the replicated log.

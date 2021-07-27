@@ -113,8 +113,6 @@ impl Commitment {
 mod tests {
     use super::*;
     use crate::config::{Server, ServerAddress};
-    use std::future::Future;
-    use std::net::Ipv4Addr;
     use tokio::sync::mpsc::unbounded_channel;
 
     fn make_configuration(voters: Vec<u64>) -> Configuration {
@@ -148,7 +146,7 @@ mod tests {
     #[tokio::test]
     async fn test_commitment_set_voters() {
         let (commit_tx, commit_rx) = unbounded_channel::<()>();
-        let mut c = Commitment::new(
+        let c = Commitment::new(
             commit_tx,
             commit_rx,
             make_configuration(vec![100, 101, 102]),
@@ -161,9 +159,8 @@ mod tests {
 
         // commit_index: 20
         let rx = c.lock().commit_rx_ch.recv().await;
-        match rx {
-            None => panic!("expected commit notify"),
-            Some(_) => {}
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
 
         c.lock()
@@ -174,16 +171,15 @@ mod tests {
         assert_eq!(idx, 30, "expected 30 entries committed, found {}", idx);
 
         let rx = c.lock().commit_rx_ch.recv().await;
-        match rx {
-            None => panic!("expect commit notify"),
-            Some(_) => {}
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
     }
 
     #[test]
     fn test_commitment_match_max() {
         let (commit_tx, commit_rx) = unbounded_channel::<()>();
-        let mut c = Commitment::new(commit_tx, commit_rx, voters(5), 4);
+        let c = Commitment::new(commit_tx, commit_rx, voters(5), 4);
 
         c.lock().match_server(1, 8);
         c.lock().match_server(2, 8);
@@ -200,15 +196,15 @@ mod tests {
     #[tokio::test]
     async fn test_commitment_match_nonvoting() {
         let (commit_tx, commit_rx) = unbounded_channel::<()>();
-        let mut c = Commitment::new(commit_tx, commit_rx, voters(5), 4);
+        let c = Commitment::new(commit_tx, commit_rx, voters(5), 4);
 
         c.lock().match_server(1, 8);
         c.lock().match_server(2, 8);
         c.lock().match_server(3, 8);
 
         let rx = c.lock().commit_rx_ch.recv().await;
-        if let None = rx {
-            panic!("expected commit notify");
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
 
         c.lock().match_server(90, 10);
@@ -222,7 +218,7 @@ mod tests {
     #[tokio::test]
     async fn test_commitment_recalculate() {
         let (commit_tx, commit_rx) = unbounded_channel::<()>();
-        let mut c = Commitment::new(commit_tx, commit_rx, voters(5), 0);
+        let c = Commitment::new(commit_tx, commit_rx, voters(5), 0);
 
         c.lock().match_server(1, 30);
         c.lock().match_server(2, 20);
@@ -234,23 +230,25 @@ mod tests {
         let idx = c.lock().get_commit_index();
         assert_eq!(idx, 10, "expected 10 entries committed, found {}", idx);
         let rx = c.lock().commit_rx_ch.recv().await;
-        if let None = rx {
-            panic!("expected commit notify");
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
 
         c.lock().match_server(4, 15);
         let idx = c.lock().get_commit_index();
         assert_eq!(idx, 15, "expected 15 entries committed, found {}", idx);
-        if let None = rx {
-            panic!("expected commit notify");
+        let rx = c.lock().commit_rx_ch.recv().await;
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
 
         c.lock().set_configuration(voters(3));
         // 1:30, 2: 20, 3: 10
         let idx = c.lock().get_commit_index();
         assert_eq!(idx, 20, "expected 20 entries committed, found {}", idx);
-        if let None = rx {
-            panic!("expected commit notify");
+        let rx = c.lock().commit_rx_ch.recv().await;
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
 
         c.lock().set_configuration(voters(4));
@@ -262,15 +260,16 @@ mod tests {
         c.lock().match_server(4, 23);
         let idx = c.lock().get_commit_index();
         assert_eq!(idx, 23, "expected 23 entries committed, found {}", idx);
-        if let None = rx {
-            panic!("expected commit notify");
+        let rx = c.lock().commit_rx_ch.recv().await;
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
     }
 
     #[tokio::test]
     async fn test_commitment_recalculate_start_index() {
         let (commit_tx, commit_rx) = unbounded_channel::<()>();
-        let mut c = Commitment::new(commit_tx, commit_rx, voters(5), 4);
+        let c = Commitment::new(commit_tx, commit_rx, voters(5), 4);
 
         c.lock().match_server(1, 3);
         c.lock().match_server(2, 3);
@@ -292,15 +291,15 @@ mod tests {
             "should be able to commit startIndex once replicated to a quorum"
         );
         let rx = c.lock().commit_rx_ch.recv().await;
-        if let None = rx {
-            panic!("expected commit notify");
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
     }
 
     #[tokio::test]
     async fn test_commitment_no_voter_sanity() {
         let (commit_tx, commit_rx) = unbounded_channel::<()>();
-        let mut c = Commitment::new(commit_tx, commit_rx, make_configuration(vec![]), 4);
+        let c = Commitment::new(commit_tx, commit_rx, make_configuration(vec![]), 4);
 
         c.lock().match_server(1, 10);
         c.lock().set_configuration(make_configuration(vec![]));
@@ -315,8 +314,8 @@ mod tests {
         let idx = c.lock().get_commit_index();
         assert_eq!(idx, 10, "expected 10 entries committed, found {}", idx);
         let rx = c.lock().commit_rx_ch.recv().await;
-        if let None = rx {
-            panic!("expected commit notify");
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
 
         c.lock().set_configuration(make_configuration(vec![]));
@@ -328,13 +327,13 @@ mod tests {
     #[tokio::test]
     async fn test_commitment_single_voter() {
         let (commit_tx, commit_rx) = unbounded_channel::<()>();
-        let mut c = Commitment::new(commit_tx, commit_rx, voters(1), 4);
+        let c = Commitment::new(commit_tx, commit_rx, voters(1), 4);
         c.lock().match_server(1, 10);
         let idx = c.lock().get_commit_index();
         assert_eq!(idx, 10, "expected 10 entries committed, found {}", idx);
         let rx = c.lock().commit_rx_ch.recv().await;
-        if let None = rx {
-            panic!("expected commit notify");
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
 
         c.lock().set_configuration(voters(1));
@@ -342,8 +341,8 @@ mod tests {
         let idx = c.lock().get_commit_index();
         assert_eq!(idx, 12, "expected 12 entries committed, found {}", idx);
         let rx = c.lock().commit_rx_ch.recv().await;
-        if let None = rx {
-            panic!("expected commit notify");
+        if let Some(v) = rx {
+            assert_eq!(v, (), "expected commit notify");
         }
     }
 }

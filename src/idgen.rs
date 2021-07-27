@@ -1,7 +1,5 @@
 use chrono::Utc;
-use parking_lot::{Mutex, MutexGuard, RawMutex};
-use sonyflake::{Error, Sonyflake};
-use std::sync::Arc;
+use sonyflake::Sonyflake;
 
 pub struct IDGen {
     sf: Sonyflake,

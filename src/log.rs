@@ -180,7 +180,7 @@ mod tests {
         get_gauge, get_registered, setup_mem_metrics, MetricsBasic, MetricsType,
     };
     use crate::mem_store::MemStore;
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
     use metrics::{GaugeValue, Key};
     use std::thread::sleep;
     use std::time::Duration;
