@@ -5,8 +5,6 @@ extern crate derive_getters;
 
 #[macro_use]
 extern crate lazy_static;
-#[macro_use]
-extern crate derive_builder;
 
 mod commands;
 
@@ -28,9 +26,11 @@ pub mod fsm;
 /// Log compaction trait
 pub mod snapshot;
 
+mod commitment;
 /// The configuration for a Raft node
 pub mod config;
 mod idgen;
+mod utils;
 
 /// `Bytes` is alias for `Vec<u8>`
 pub type Bytes = Vec<u8>;

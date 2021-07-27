@@ -563,15 +563,15 @@ pub enum ServerAddress {
 /// `Server` tracks the information about a single server in a configuration.
 pub struct Server {
     /// `suffrage` determines whether the server gets a vote.
-    suffrage: ServerSuffrage,
+    pub suffrage: ServerSuffrage,
 
     /// `id` is a unique number ([Sonyflake distributed unique ID generator](https://github.com/sony/sonyflake) ) identifying this server for all time.
     ///
     /// Thanks for Arne Bahlo, the author of [sonyflake-rs](https://github.com/bahlo/sonyflake-rs).
-    id: ServerID,
+    pub id: ServerID,
 
     /// `address` is its network address that a transport can contact.
-    address: ServerAddress,
+    pub address: ServerAddress,
 }
 
 /// `Configuration` tracks which servers are in the cluster, and whether they have
@@ -579,7 +579,19 @@ pub struct Server {
 /// The servers are listed no particular order, but each should only appear once.
 /// These entries are appended to the log during membership changes.
 pub struct Configuration {
-    servers: Vec<Server>,
+    pub servers: Vec<Server>,
+}
+
+impl Configuration {
+    pub fn new() -> Self {
+        Self {
+            servers: Vec::new(),
+        }
+    }
+
+    pub fn with_servers(servers: Vec<Server>) -> Self {
+        Self { servers }
+    }
 }
 
 #[derive(Display, FromStr, Debug, Copy, Clone, Eq, PartialEq)]
