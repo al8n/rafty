@@ -92,4 +92,16 @@ pub enum Errors {
     /// client requests because it is attempting to transfer leadership.
     #[error("leadership transfer in progress")]
     LeadershipTransferInProgress,
+
+    #[error("found duplicate server ID in configuration: `{0}`")]
+    DuplicateServerID(u64),
+
+    #[error("found duplicate server address in configuration: `{0}`")]
+    DuplicateServerAddress(String),
+
+    #[error("need at least one voter in configuration")]
+    NonVoter,
+
+    #[error("configuration changed since {prev_index} (latest is {current_index})")]
+    ConfigurationChanged { current_index: u64, prev_index: u64 },
 }

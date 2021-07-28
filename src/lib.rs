@@ -3,6 +3,11 @@
 
 extern crate derive_getters;
 
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate rmp_serde as rmps;
+
 #[macro_use]
 extern crate lazy_static;
 

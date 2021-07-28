@@ -1,8 +1,33 @@
+/* Copyright 2021 Al Liu (https://github.com/al8n). Licensed under Apache-2.0.
+ *
+ * Copyright 2017 The Hashicorp's Raft repository authors(https://github.com/hashicorp/raft) authors. Licensed under MPL-2.0.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 use crate::errors::Errors;
+use crate::fsm::{FSMSnapshot, FSM};
+use crate::log::Log;
 use crossbeam::channel::Receiver;
 use parse_display::{Display, FromStr};
+use rmps::{Deserializer, Serializer};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::error::Error;
+use std::fmt::Formatter;
+use std::io::Cursor;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
+use tokio::io::AsyncRead;
 
 static DEFAULT_HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(1000);
 static DEFAULT_ELECTION_TIMEOUT: Duration = Duration::from_millis(1000);
@@ -525,7 +550,7 @@ impl PartialEq<Config> for ReloadableConfig {
 }
 
 /// `ServerSuffrage` determines whether a `Server` in a `Configuration` gets a vote.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Display, FromStr)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display, FromStr, Serialize, Deserialize)]
 #[display(style = "CamelCase")]
 pub enum ServerSuffrage {
     /// `Voter` is a server whose vote is counted in elections and whose match index
@@ -547,20 +572,21 @@ pub enum ServerSuffrage {
 pub type ServerID = u64;
 
 /// `ServerAddress` is a network address for a server that a transport can contact.
-// pub type ServerAddress = String;
-#[derive(Display, FromStr, Copy, Clone, Eq, PartialEq, Debug)]
-#[display(style = "CamelCase")]
-pub enum ServerAddress {
-    /// `IPv4` stands for an IPv4 address
-    #[display("IPv4: {0}")]
-    IPv4(Ipv4Addr),
-
-    /// `IPv6` stands for an IPv6 address
-    #[display("IPv6: {0}")]
-    IPv6(Ipv6Addr),
-}
+pub type ServerAddress = String;
+// #[derive(Display, FromStr, Copy, Clone, Eq, PartialEq, Debug)]
+// #[display(style = "CamelCase")]
+// pub enum ServerAddress {
+//     /// `IPv4` stands for an IPv4 address
+//     #[display("IPv4: {0}")]
+//     IPv4(Ipv4Addr),
+//
+//     /// `IPv6` stands for an IPv6 address
+//     #[display("IPv6: {0}")]
+//     IPv6(Ipv6Addr),
+// }
 
 /// `Server` tracks the information about a single server in a configuration.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Server {
     /// `suffrage` determines whether the server gets a vote.
     pub suffrage: ServerSuffrage,
@@ -574,10 +600,24 @@ pub struct Server {
     pub address: ServerAddress,
 }
 
+impl std::fmt::Display for Server {
+    #[cfg(test)]
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} {}", self.suffrage, self.id, self.address)
+    }
+
+    #[cfg(not(test))]
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // TODO: rewrite method for not test
+        write!(f, "{} {} {}", self.suffrage, self.id, self.address)
+    }
+}
+
 /// `Configuration` tracks which servers are in the cluster, and whether they have
 /// votes. This should include the local server, if it's a member of the cluster.
 /// The servers are listed no particular order, but each should only appear once.
 /// These entries are appended to the log during membership changes.
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Configuration {
     pub servers: Vec<Server>,
 }
@@ -592,6 +632,64 @@ impl Configuration {
     pub fn with_servers(servers: Vec<Server>) -> Self {
         Self { servers }
     }
+}
+
+impl std::fmt::Display for Configuration {
+    #[cfg(test)]
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let x = self
+            .servers
+            .iter()
+            .map(|val| format!("{{{}}}", *val))
+            .collect::<Vec<String>>();
+        write!(f, "{{[{}]}}", x.join(" "))
+    }
+
+    #[cfg(not(test))]
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // TODO: rewrite method for not test
+        let x = self
+            .servers
+            .iter()
+            .map(|val| format!("{{{}}}", *val))
+            .collect::<Vec<String>>();
+        write!(f, "{{[{}]}}", x.join(" "))
+    }
+}
+
+/// `ConfigurationStore` provides an interface that can optionally be implemented by FSMs
+/// to store configuration updates made in the replicated log. In general this is only
+/// necessary for FSMs that mutate durable state directly instead of applying changes
+/// in memory and snapshotting periodically. By storing configuration changes, the
+/// persistent FSM state can behave as a complete snapshot, and be able to recover
+/// without an external snapshot just for persisting the raft configuration.
+pub trait ConfigurationStore<T>: FSM<T> {
+    /// ConfigurationStore is a superset of the FSM functionality
+
+    /// StoreConfiguration is invoked once a log entry containing a configuration
+    /// change is committed. It takes the index at which the configuration was
+    /// written and the configuration value.
+    fn store_configuration(&self, index: u64, cfg: Configuration);
+}
+
+struct NopConfigurationStore;
+
+impl<T> FSM<T> for NopConfigurationStore {
+    fn apply(&self, l: Log) -> T {
+        todo!()
+    }
+
+    fn snapshot(&self) -> Box<dyn FSMSnapshot> {
+        todo!()
+    }
+
+    fn restore(&self, r: Box<dyn AsyncRead>) -> anyhow::Result<(), std::io::Error> {
+        todo!()
+    }
+}
+
+impl<T> ConfigurationStore<T> for NopConfigurationStore {
+    fn store_configuration(&self, index: u64, cfg: Configuration) {}
 }
 
 #[derive(Display, FromStr, Debug, Copy, Clone, Eq, PartialEq)]
@@ -610,11 +708,442 @@ pub enum ConfigurationChangeCommand {
     Promote,
 }
 
+/// `ConfigurationChangeRequest` describes a change that a leader would like to
+/// make to its current configuration. It's used only within a single server
+/// (never serialized into the log), as part of `ConfigurationChangeFuture`.
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ConfigurationChangeRequest {
+    command: ConfigurationChangeCommand,
+    server_id: ServerID,
+    server_address: ServerAddress, // only present for `AddStaging`, `AddNonvoter`
+
+    /// `prev_index`, if nonzero, is the index of the only configuration upon which
+    /// this change may be applied; if another configuration entry has been
+    /// added in the meantime, this request will fail.
+    prev_index: u64,
+}
+
+/// `Configurations` is state tracked on every server about its Configurations.
+/// Note that, per Diego's dissertation, there can be at most one uncommitted
+/// configuration at a time (the next configuration may not be created until the
+/// prior one has been committed).
+///
+/// One downside to storing just two configurations is that if you try to take a
+/// snapshot when your state machine hasn't yet applied the committedIndex, we
+/// have no record of the configuration that would logically fit into that
+/// snapshot. We disallow snapshots in that case now. An alternative approach,
+/// which LogCabin uses, is to track every configuration change in the
+/// log.
+struct Configurations {
+    /// `committed` is the `latest` configuration in the log/snapshot that has been
+    /// `committed` (the one with the largest index).
+    committed: Configuration,
+
+    /// `committed_index` is the log index where 'committed' was written.
+    committed_index: u64,
+
+    /// `latest` is the latest configuration in the log/snapshot (may be committed
+    /// or uncommitted)
+    latest: Configuration,
+
+    /// latest_index is the log index where 'latest' was written.
+    latest_index: u64,
+}
+
+/// `has_vote` returns true if the server identified by 'id' is a Voter in the
+/// provided `Configuration`.
+fn has_vote(configuration: Configuration, id: ServerID) -> bool {
+    for s in configuration.servers {
+        if s.id == id {
+            return s.suffrage == ServerSuffrage::Voter;
+        }
+    }
+    false
+}
+
+/// `check_configuration` tests a cluster membership configuration for common
+/// errors.
+fn check_configuration(configuration: Configuration) -> Result<Configuration, Errors> {
+    let mut id_set = HashMap::<ServerID, bool>::new();
+    let mut address_set = HashMap::<ServerAddress, bool>::new();
+    let mut voters = 0;
+    for s in &configuration.servers {
+        // TODO: check whether server id is valid
+
+        if let Some(_) = id_set.get(&s.id) {
+            return Err(Errors::DuplicateServerID(s.id));
+        }
+        id_set.insert(s.id, true);
+
+        if let Some(_) = address_set.get(&s.address) {
+            return Err(Errors::DuplicateServerAddress(s.clone().address));
+        }
+
+        address_set.insert(s.clone().address, true);
+        if s.suffrage == ServerSuffrage::Voter {
+            voters += 1;
+        }
+    }
+
+    if voters == 0 {
+        return Err(Errors::NonVoter);
+    }
+
+    Ok(configuration)
+}
+
+/// `next_configuration` generates a new `Configuration` from the current one and a
+/// configuration change request. It's split from `append_configuration_entry` so
+/// that it can be unit tested easily.
+fn next_configuration(
+    current: Configuration,
+    current_index: u64,
+    change: ConfigurationChangeRequest,
+) -> Result<Configuration, Errors> {
+    if change.prev_index > 0 && change.prev_index != current_index {
+        return Err(Errors::ConfigurationChanged {
+            current_index,
+            prev_index: change.prev_index,
+        });
+    }
+
+    let mut configuration = current.clone();
+
+    match change.command {
+        ConfigurationChangeCommand::AddStaging => {
+            // TODO: barf on new address?
+            let new_server = Server {
+                // TODO: This should add the server as Staging, to be automatically
+                // promoted to Voter later. However, the promotion to Voter is not yet
+                // implemented, and doing so is not trivial with the way the leader loop
+                // coordinates with the replication goroutines today. So, for now, the
+                // server will have a vote right away, and the Promote case below is
+                // unused.
+                suffrage: ServerSuffrage::Voter,
+                id: change.clone().server_id,
+                address: change.clone().server_address,
+            };
+
+            let mut found = false;
+            for (idx, s) in configuration.servers.iter().enumerate() {
+                if s.id == change.server_id {
+                    if s.suffrage == ServerSuffrage::Voter {
+                        configuration.servers[idx].address = change.server_address;
+                    } else {
+                        configuration.servers[idx] = new_server.clone();
+                    }
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                configuration.servers.push(new_server);
+            }
+        }
+        ConfigurationChangeCommand::AddNonvoter => {
+            let new_server = Server {
+                suffrage: ServerSuffrage::Nonvoter,
+                id: change.clone().server_id,
+                address: change.clone().server_address,
+            };
+
+            let mut found = false;
+            for (idx, s) in configuration.servers.iter().enumerate() {
+                if s.id == change.server_id {
+                    if s.suffrage != ServerSuffrage::Nonvoter {
+                        configuration.servers[idx].address = change.server_address;
+                    } else {
+                        configuration.servers[idx] = new_server.clone();
+                    }
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                configuration.servers.push(new_server);
+            }
+        }
+        ConfigurationChangeCommand::DemoteVoter => {
+            for (idx, s) in configuration.servers.iter().enumerate() {
+                if s.id == change.server_id {
+                    configuration.servers[idx].suffrage = ServerSuffrage::Nonvoter;
+                    break;
+                }
+            }
+        }
+        ConfigurationChangeCommand::RemoveServer => {
+            for (idx, s) in configuration.servers.iter().enumerate() {
+                if s.id == change.server_id {
+                    configuration.servers.remove(idx);
+                    break;
+                }
+            }
+        }
+        ConfigurationChangeCommand::Promote => {
+            for (idx, s) in configuration.servers.iter().enumerate() {
+                if s.id == change.server_id && s.suffrage == ServerSuffrage::Staging {
+                    configuration.servers[idx].suffrage = ServerSuffrage::Voter;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Make sure we didn't do something bad like remove the last voter
+    match check_configuration(configuration) {
+        Ok(c) => Ok(c),
+        Err(e) => Err(e),
+    }
+}
+
+/// `encode_configuration` serializes a `Configuration` using MsgPack, or panics on
+/// errors.
+pub fn encode_configuration(configuration: Configuration) -> Vec<u8> {
+    let mut buf = Vec::<u8>::new();
+    match configuration.serialize(&mut Serializer::new(&mut buf)) {
+        Ok(_) => buf,
+        Err(e) => panic!(e),
+    }
+}
+
+/// `decode_configuration` deserializes a Configuration using MsgPack, or panics on
+/// errors.
+pub fn decode_configuration(buf: Vec<u8>) -> Configuration {
+    let cur = Cursor::new(&buf[..]);
+    let mut de = Deserializer::new(cur);
+
+    let cfg: Configuration = Deserialize::deserialize(&mut de).unwrap();
+    cfg
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::config::ConfigurationChangeCommand::AddNonvoter;
     use crate::config::ProtocolVersion::ProtocolVersionMax;
     use crossbeam::channel::unbounded;
+
+    fn sample_configuration() -> Configuration {
+        Configuration::with_servers(vec![
+            Server {
+                suffrage: ServerSuffrage::Nonvoter,
+                id: 0,
+                address: "addr0".to_string(),
+            },
+            Server {
+                suffrage: ServerSuffrage::Voter,
+                id: 1,
+                address: "addr1".to_string(),
+            },
+            Server {
+                suffrage: ServerSuffrage::Staging,
+                id: 2,
+                address: "addr2".to_string(),
+            },
+        ])
+    }
+
+    fn single_server() -> Configuration {
+        Configuration::with_servers(vec![Server {
+            suffrage: ServerSuffrage::Voter,
+            id: 1,
+            address: "addr1x".to_string(),
+        }])
+    }
+
+    fn one_of_each() -> Configuration {
+        Configuration::with_servers(vec![
+            Server {
+                suffrage: ServerSuffrage::Voter,
+                id: 1,
+                address: "addr1x".to_string(),
+            },
+            Server {
+                suffrage: ServerSuffrage::Staging,
+                id: 2,
+                address: "addr2x".to_string(),
+            },
+            Server {
+                suffrage: ServerSuffrage::Nonvoter,
+                id: 3,
+                address: "addr3x".to_string(),
+            },
+        ])
+    }
+
+    fn voter_pair() -> Configuration {
+        Configuration::with_servers(vec![
+            Server {
+                suffrage: ServerSuffrage::Voter,
+                id: 1,
+                address: "addr1x".to_string(),
+            },
+            Server {
+                suffrage: ServerSuffrage::Voter,
+                id: 2,
+                address: "addr2x".to_string(),
+            },
+        ])
+    }
+
+    #[derive(Clone)]
+    struct NextConfigurationTests {
+        current: Configuration,
+        command: ConfigurationChangeCommand,
+        server_id: u64,
+        next: String,
+    }
+
+    fn next_configuration_tests() -> Vec<NextConfigurationTests> {
+        vec![
+            // AddStaging: was missing
+            NextConfigurationTests {
+                current: Configuration::new(),
+                command: ConfigurationChangeCommand::AddStaging,
+                server_id: 1,
+                next: "{[{Voter 1 addr1}]}".to_string(),
+            },
+            NextConfigurationTests {
+                current: single_server(),
+                command: ConfigurationChangeCommand::AddStaging,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x} {Voter 2 addr2}]}".to_string(),
+            },
+            // AddStaging: was Voter.
+            NextConfigurationTests {
+                current: single_server(),
+                command: ConfigurationChangeCommand::AddStaging,
+                server_id: 1,
+                next: "{[{Voter 1 addr1}]}".to_string(),
+            },
+            // AddStaging: was Staging
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::AddStaging,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x} {Voter 2 addr2} {Nonvoter 3 addr3x}]}".to_string(),
+            },
+            // AddStaging: was Nonvoter
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::AddStaging,
+                server_id: 3,
+                next: "{[{Voter 1 addr1x} {Staging 2 addr2x} {Voter 3 addr3}]}".to_string(),
+            },
+            // AddNonvoter: was missing
+            NextConfigurationTests {
+                current: single_server(),
+                command: ConfigurationChangeCommand::AddNonvoter,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x} {Nonvoter 2 addr2}]}".to_string(),
+            },
+            // AddNonvoter: was Voter.
+            NextConfigurationTests {
+                current: single_server(),
+                command: ConfigurationChangeCommand::AddNonvoter,
+                server_id: 1,
+                next: "{[{Voter 1 addr1}]}".to_string(),
+            },
+            // AddNonvoter: was Staging
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::AddNonvoter,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x} {Staging 2 addr2} {Nonvoter 3 addr3x}]}".to_string(),
+            },
+            // AddNonvoter: was Nonvoter.
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::AddNonvoter,
+                server_id: 3,
+                next: "{[{Voter 1 addr1x} {Staging 2 addr2x} {Nonvoter 3 addr3}]}".to_string(),
+            },
+            // DemoteVoter: was missing
+            NextConfigurationTests {
+                current: single_server(),
+                command: ConfigurationChangeCommand::DemoteVoter,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x}]}".to_string(),
+            },
+            // DemoteVoter: was Voter
+            NextConfigurationTests {
+                current: voter_pair(),
+                command: ConfigurationChangeCommand::DemoteVoter,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x} {Nonvoter 2 addr2x}]}".to_string(),
+            },
+            // DemoteVoter: was Staging
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::DemoteVoter,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x} {Nonvoter 2 addr2x} {Nonvoter 3 addr3x}]}".to_string(),
+            },
+            // DemoteVoter: was Nonvoter
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::DemoteVoter,
+                server_id: 3,
+                next: "{[{Voter 1 addr1x} {Staging 2 addr2x} {Nonvoter 3 addr3x}]}".to_string(),
+            },
+            // RemoveServer: was missing
+            NextConfigurationTests {
+                current: single_server(),
+                command: ConfigurationChangeCommand::RemoveServer,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x}]}".to_string(),
+            },
+            // RemoveServer: was Voter
+            NextConfigurationTests {
+                current: voter_pair(),
+                command: ConfigurationChangeCommand::RemoveServer,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x}]}".to_string(),
+            },
+            // RemoveServer: was Staging
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::RemoveServer,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x} {Nonvoter 3 addr3x}]}".to_string(),
+            },
+            // RemoveServer: was Nonvoter
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::RemoveServer,
+                server_id: 3,
+                next: "{[{Voter 1 addr1x} {Staging 2 addr2x}]}".to_string(),
+            },
+            // Promote: was missing
+            NextConfigurationTests {
+                current: single_server(),
+                command: ConfigurationChangeCommand::Promote,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x}]}".to_string(),
+            },
+            // Promote: was Voter
+            NextConfigurationTests {
+                current: single_server(),
+                command: ConfigurationChangeCommand::Promote,
+                server_id: 1,
+                next: "{[{Voter 1 addr1x}]}".to_string(),
+            },
+            // Promote: was Staging
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::Promote,
+                server_id: 2,
+                next: "{[{Voter 1 addr1x} {Voter 2 addr2x} {Nonvoter 3 addr3x}]}".to_string(),
+            },
+            // Promote: was Nonvoter
+            NextConfigurationTests {
+                current: one_of_each(),
+                command: ConfigurationChangeCommand::Promote,
+                server_id: 3,
+                next: "{[{Voter 1 addr1x} {Staging 2 addr2x} {Nonvoter 3 addr3x}]}".to_string(),
+            },
+        ]
+    }
 
     #[test]
     fn test_config_builder() {
@@ -669,5 +1198,115 @@ mod test {
         assert!(rc == config.clone());
         let rc = ReloadableConfig::default();
         assert_eq!(rc.apply(config.clone()).trailing_logs, config.trailing_logs);
+    }
+
+    #[test]
+    fn test_configuration_next_configuration_table() {
+        for (idx, tt) in next_configuration_tests().into_iter().enumerate() {
+            let req = ConfigurationChangeRequest {
+                command: tt.command,
+                server_id: tt.server_id,
+                server_address: format!("addr{}", tt.server_id),
+                prev_index: 0,
+            };
+            let next = next_configuration(tt.clone().current, 1, req);
+            match next {
+                Ok(next) => {
+                    assert_eq!(
+                        format!("{}", next),
+                        tt.next,
+                        "nextConfiguration {} returned {}, expected {}",
+                        idx,
+                        next,
+                        tt.next
+                    );
+                }
+                Err(err) => {
+                    eprintln!(
+                        "nextConfiguration {} should have succeeded, got {}",
+                        idx, err
+                    );
+                    continue;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_configuration_next_configuration_prev_index() {
+        // stable prev_index
+        let req = ConfigurationChangeRequest {
+            command: ConfigurationChangeCommand::AddStaging,
+            server_id: 1,
+            server_address: "addr1".to_string(),
+            prev_index: 1,
+        };
+        match next_configuration(single_server(), 2, req) {
+            Ok(_) => {
+                panic!(
+                    "next_configuration should have failed due to intervening configuration change"
+                );
+            }
+            Err(e) => {
+                let s = format!("{}", e);
+                assert!(
+                    s.contains("changed"),
+                    "next_configuration should have failed due to intervening configuration change"
+                );
+            }
+        }
+
+        // current prev_index
+        let req = ConfigurationChangeRequest {
+            command: ConfigurationChangeCommand::AddStaging,
+            server_id: 2,
+            server_address: "addr2".to_string(),
+            prev_index: 2,
+        };
+        match next_configuration(single_server(), 2, req) {
+            Ok(_) => {}
+            Err(e) => panic!("nextConfiguration should have succeeded, got {}", e),
+        }
+
+        // zero prev_index
+        let req = ConfigurationChangeRequest {
+            command: ConfigurationChangeCommand::AddStaging,
+            server_id: 3,
+            server_address: "addr3".to_string(),
+            prev_index: 0,
+        };
+        match next_configuration(single_server(), 2, req) {
+            Ok(_) => {}
+            Err(e) => panic!("nextConfiguration should have succeeded, got {}", e),
+        }
+    }
+
+    #[test]
+    fn test_configuration_next_configuration_check_configuration() {
+        let req = ConfigurationChangeRequest {
+            command: AddNonvoter,
+            server_id: 1,
+            server_address: "addr1".to_string(),
+            prev_index: 0,
+        };
+
+        match next_configuration(Configuration::new(), 1, req) {
+            Ok(_) => {
+                panic!("next_configuration should have failed for not having a voter");
+            }
+            Err(e) => {
+                let s = format!("{}", e);
+                assert!(
+                    s.contains("at least one voter"),
+                    "next_configuration should have failed for not having a voter"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_configuration_encode_decode_configuration() {
+        let cfg = decode_configuration(encode_configuration(sample_configuration()));
+        assert_eq!(cfg, sample_configuration());
     }
 }
