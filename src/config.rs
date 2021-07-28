@@ -902,7 +902,7 @@ pub fn encode_configuration(configuration: Configuration) -> Vec<u8> {
     let mut buf = Vec::<u8>::new();
     match configuration.serialize(&mut Serializer::new(&mut buf)) {
         Ok(_) => buf,
-        Err(e) => panic!(e),
+        Err(e) => panic!("{}", e),
     }
 }
 
@@ -1198,6 +1198,26 @@ mod test {
         assert!(rc == config.clone());
         let rc = ReloadableConfig::default();
         assert_eq!(rc.apply(config.clone()).trailing_logs, config.trailing_logs);
+    }
+
+    #[test]
+    fn test_configuration_has_vote() {
+        assert!(
+            !has_vote(sample_configuration(), 0),
+            "server id 0 should not have vote"
+        );
+        assert!(
+            has_vote(sample_configuration(), 1),
+            "server id 1 should have vote"
+        );
+        assert!(
+            !has_vote(sample_configuration(), 2),
+            "server id 2 should not have vote"
+        );
+        assert!(
+            !has_vote(sample_configuration(), 12345),
+            "server other id should not have vote"
+        );
     }
 
     #[test]
