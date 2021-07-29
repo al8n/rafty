@@ -17,7 +17,6 @@
 use crate::errors::Errors;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use crossbeam::channel::{select, Receiver};
 use derive_getters::Getters;
 use metrics::gauge;
 use parking_lot::RwLock;
@@ -25,6 +24,8 @@ use parse_display::{Display, FromStr};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::time::sleep;
+use tokio::{select, sync::mpsc::Receiver};
 
 /// LogType describes various types of log entries
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display, FromStr)]
@@ -115,6 +116,55 @@ impl Log {
             append_at: Utc::now(),
         }
     }
+
+    pub fn with_arc(index: u64, term: u64, typ: LogType) -> Arc<Self> {
+        Arc::new(Self::new(index, term, typ))
+    }
+
+    pub fn with_all(
+        index: u64,
+        term: u64,
+        typ: LogType,
+        data: Vec<u8>,
+        ext: Vec<u8>,
+        append_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            index,
+            term,
+            typ,
+            data,
+            extensions: ext,
+            append_at,
+        }
+    }
+
+    pub fn with_all_and_arc(
+        index: u64,
+        term: u64,
+        typ: LogType,
+        data: Vec<u8>,
+        ext: Vec<u8>,
+        append_at: DateTime<Utc>,
+    ) -> Arc<Self> {
+        Arc::new(Self::with_all(index, term, typ, data, ext, append_at))
+    }
+
+    pub fn set_data(&mut self, data: Vec<u8>) {
+        self.data = data;
+    }
+
+    pub fn set_extensions(&mut self, ext: Vec<u8>) {
+        self.extensions = ext;
+    }
+
+    pub fn set_append_time(&mut self, time: DateTime<Utc>) {
+        self.append_at = time;
+    }
+
+    pub fn set_type(&mut self, typ: LogType) {
+        self.typ = typ;
+    }
 }
 
 impl Default for Log {
@@ -150,57 +200,67 @@ pub trait LogStore {
 
     /// `delete_range` deletes a range of log entries. The range is inclusive.
     fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors>;
+}
 
-    /// `oldest_log` returns the oldest log in the store.
-    fn oldest_log(&self) -> Result<Arc<Log>, Errors> {
-        // We might get unlucky and have a truncate right between getting first log
-        // index and fetching it so keep trying until we succeed or hard fail.
-        let mut last_fail_idx = 0;
-        let mut last_err: Errors = Errors::LogNotFound;
+/// `oldest_log` returns the oldest log in the store.
+fn oldest_log<T>(store: T) -> Result<Arc<Log>, Errors>
+where
+    T: LogStore + Clone,
+{
+    // We might get unlucky and have a truncate right between getting first log
+    // index and fetching it so keep trying until we succeed or hard fail.
+    let mut last_fail_idx = 0;
+    let mut last_err: Errors = Errors::LogNotFound;
 
-        loop {
-            let first_idx = self.first_index()?;
-            if first_idx == 0 {
-                return Err(Errors::LogNotFound);
+    loop {
+        let first_idx = store.first_index()?;
+        if first_idx == 0 {
+            return Err(Errors::LogNotFound);
+        }
+
+        if first_idx == last_fail_idx {
+            // Got same index as last time around which errored, don't bother trying
+            // to fetch it again just return the error
+            return Err(last_err);
+        }
+
+        match store.get_log(first_idx) {
+            Ok(l) => {
+                // we found the oldest log, break the loop
+                return Ok(l.clone());
             }
-
-            if first_idx == last_fail_idx {
-                // Got same index as last time around which errored, don't bother trying
-                // to fetch it again just return the error
-                return Err(last_err);
-            }
-
-            match self.get_log(first_idx) {
-                Ok(l) => {
-                    // we found the oldest log, break the loop
-                    return Ok(l.clone());
-                }
-                Err(e) => {
-                    // We failed, keep trying to see if there is a new first_idx
-                    last_err = e;
-                    last_fail_idx = first_idx;
-                }
+            Err(e) => {
+                // We failed, keep trying to see if there is a new first_idx
+                last_err = e;
+                last_fail_idx = first_idx;
             }
         }
     }
+}
 
-    /// `emit_log_store_metrics` emits the information to the metrics
-    fn emit_log_store_metrics(&self, prefix: String, interval: Duration, stop_chan: Receiver<()>) {
-        loop {
-            select! {
-                recv(stop_chan) -> _ => return,
-                default(interval) => {
-                    // In error case emit 0 as the age
-                    let mut age_ms = 0i64;
-                    if let Ok(l) = self.oldest_log() {
-                        if l.append_at.timestamp_millis() != 0 {
-                            age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
-                        }
+/// `emit_log_store_metrics` emits the information to the metrics
+async fn emit_log_store_metrics<T>(
+    store: T,
+    prefix: String,
+    interval: Duration,
+    stop_chan: &mut Receiver<()>,
+) where
+    T: LogStore + Clone,
+{
+    loop {
+        select! {
+            _ = stop_chan.recv() => return,
+            _ = sleep(interval) => {
+                // In error case emit 0 as the age
+                let mut age_ms = 0i64;
+                if let Ok(l) = oldest_log(store.clone()) {
+                    if l.append_at.timestamp_millis() != 0 {
+                        age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
                     }
+                }
 
-                    gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
-                },
-            }
+                gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
+            },
         }
     }
 }
@@ -272,7 +332,7 @@ impl<T: LogStore> LogStore for LogCache<T> {
 #[cfg(test)]
 mod tests {
     use crate::errors::Errors;
-    use crate::log::{Log, LogCache, LogStore, LogType};
+    use crate::log::{emit_log_store_metrics, oldest_log, Log, LogCache, LogStore, LogType};
     use crate::mem_metrics::{
         get_gauge, get_registered, setup_mem_metrics, MetricsBasic, MetricsType,
     };
@@ -280,8 +340,8 @@ mod tests {
     use chrono::Utc;
     use metrics::{GaugeValue, Key};
     use std::sync::Arc;
-    use std::thread::sleep;
     use std::time::Duration;
+    use tokio::{join, time::sleep};
 
     #[test]
     fn test_oldest_log() {
@@ -337,7 +397,7 @@ mod tests {
             let st = s.store_logs(case.logs);
             assert_eq!((), st.unwrap());
 
-            match s.oldest_log() {
+            match oldest_log(s) {
                 Ok(got) => {
                     assert!(!case.want_err, "wanted error but got nil");
                     assert_eq!(got.index, case.want_idx);
@@ -349,8 +409,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_emit_log_store_metrics() {
+    #[tokio::test]
+    async fn test_emit_log_store_metrics() {
         setup_mem_metrics();
         let start = Utc::now();
 
@@ -385,18 +445,18 @@ mod tests {
 
         s.store_logs(logs).unwrap();
 
-        let (stop_ch_tx, stop_ch_rx) = crossbeam::channel::bounded::<()>(1);
+        let (stop_ch_tx, mut stop_ch_rx) = tokio::sync::mpsc::channel(1);
 
-        let jh = std::thread::spawn(move || {
-            sleep(Duration::from_millis(1000));
-            stop_ch_tx.send(()).unwrap();
+        tokio::spawn(async move {
+            emit_log_store_metrics(
+                s,
+                "raft.test".to_string(),
+                std::time::Duration::from_millis(100),
+                &mut stop_ch_rx,
+            )
+            .await;
         });
-
-        s.emit_log_store_metrics(
-            "raft.test".to_string(),
-            std::time::Duration::from_millis(100),
-            stop_ch_rx,
-        );
+        sleep(Duration::from_millis(1000)).await;
 
         let key = Key::from_static_name("raft.test.oldest.log.age");
         let gv = get_gauge(key.clone()).unwrap();
@@ -416,8 +476,7 @@ mod tests {
 
         let bi = get_registered(key.clone()).unwrap();
         assert_eq!(bi, MetricsBasic::from_type(MetricsType::Gauge));
-
-        jh.join().unwrap();
+        stop_ch_tx.send(()).await;
     }
 
     #[test]
@@ -467,15 +526,6 @@ mod tests {
         let idx = s.last_index().unwrap();
         assert_eq!(idx, 34, "bad: {}", idx);
         drop(s);
-        // // Check that it wrote-through
-        // let l = store.get_log(33).unwrap();
-        // assert_eq!(l.index, 33);
-        // let l = store.get_log(34).unwrap();
-        // assert_eq!(l.index, 34);
-        //
-        // // Delete in the backend
-        // let x = store.delete_range(33, 34).unwrap();
-        // assert_eq!((), x);
 
         // Should be in the ring buffer
         let s = c.read();

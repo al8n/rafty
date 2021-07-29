@@ -27,6 +27,7 @@ use crate::Bytes;
 /// MemStore implements the LogStore and StableStore trait.
 /// It should NOT EVER be used for production. It is used only for
 /// unit tests. Use the MDBStore implementation instead.
+#[derive(Debug, Clone)]
 pub struct MemStore {
     low_index: usize,
     high_index: usize,
