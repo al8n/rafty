@@ -8,6 +8,9 @@ pub enum Errors {
     #[error("log not found")]
     LogNotFound,
 
+    #[error("unable to store logs within log store, err: {0}")]
+    UnableToStoreLogs(String),
+
     /// `NotFound` when some else is not found, which is different from `LogNotFound`
     #[error("not found")]
     NotFound,

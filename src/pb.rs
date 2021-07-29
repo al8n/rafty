@@ -1,6 +1,4 @@
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct HardState {
     /// latest term server has seen (initialized to 0 on first boot, increases monotonically)
     #[prost(uint64, required, tag = "1")]
@@ -12,18 +10,14 @@ pub struct HardState {
     #[prost(uint64, required, tag = "3")]
     pub commit_index: u64,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct Entry {
     #[prost(enumeration = "EntryType", optional, tag = "1")]
     pub typ: ::core::option::Option<i32>,
     #[prost(bytes = "vec", optional, tag = "2")]
     pub data: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct AppendEntriesRequest {
     /// leader's term
     #[prost(uint64, required, tag = "1")]
@@ -45,9 +39,7 @@ pub struct AppendEntriesRequest {
     #[prost(uint64, required, tag = "6")]
     pub leader_commit: u64,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct AppendEntriesResponse {
     /// current term, for leader to update itself
     #[prost(uint64, required, tag = "1")]
@@ -58,9 +50,7 @@ pub struct AppendEntriesResponse {
     pub success: bool,
 }
 /// The vote request candidates (§5.2).
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct VoteRequest {
     /// candidate's term
     #[prost(uint64, required, tag = "1")]
@@ -76,9 +66,7 @@ pub struct VoteRequest {
     pub last_log_term: ::core::option::Option<u64>,
 }
 /// The vote response
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct VoteResponse {
     /// current term, for candidate to update itself
     #[prost(uint64, required, tag = "1")]
@@ -87,17 +75,13 @@ pub struct VoteResponse {
     #[prost(bool, required, tag = "2")]
     pub vote_granted: bool,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct AddServerRequest {
     /// address of server to add to configuration
     #[prost(string, required, tag = "1")]
     pub addr: ::prost::alloc::string::String,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct AddServerResponse {
     /// OK if server was added successfully
     /// NOT_LEADER if not leader
@@ -108,17 +92,13 @@ pub struct AddServerResponse {
     #[prost(string, optional, tag = "2")]
     pub leader_hint: ::core::option::Option<::prost::alloc::string::String>,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct RemoveServerRequest {
     /// address of server to remove from configuration
     #[prost(string, required, tag = "1")]
     pub old_server: ::prost::alloc::string::String,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct RemoveServerResponse {
     /// OK if server was removed successfully
     #[prost(enumeration = "Status", required, tag = "1")]
@@ -127,9 +107,19 @@ pub struct RemoveServerResponse {
     #[prost(string, optional, tag = "2")]
     pub leader_hint: ::core::option::Option<::prost::alloc::string::String>,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    ::prost::Enumeration,
+)]
 #[repr(i32)]
 pub enum EntryType {
     Normal = 0,
@@ -140,9 +130,19 @@ pub enum EntryType {
     LeaderTransfer = 5,
     Snapshot = 6,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    ::prost::Enumeration,
+)]
 #[repr(i32)]
 pub enum Status {
     Ok = 0,
@@ -152,8 +152,9 @@ pub enum Status {
 }
 #[doc = r" Generated client implementations."]
 pub mod raft_client {
-    #![allow(unused_variables, dead_code, missing_docs)]
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    #[derive(Debug, Clone)]
     pub struct RaftClient<T> {
         inner: tonic::client::Grpc<T>,
     }
@@ -171,17 +172,40 @@ pub mod raft_client {
     impl<T> RaftClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + HttpBody + Send + 'static,
+        T::ResponseBody: Body + Send + Sync + 'static,
         T::Error: Into<StdError>,
-        <T::ResponseBody as HttpBody>::Error: Into<StdError> + Send,
+        <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
         pub fn new(inner: T) -> Self {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
-        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
-            let inner = tonic::client::Grpc::with_interceptor(inner, interceptor);
-            Self { inner }
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> RaftClient<InterceptedService<T, F>>
+        where
+            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
+        {
+            RaftClient::new(InterceptedService::new(inner, interceptor))
+        }
+        #[doc = r" Compress requests with `gzip`."]
+        #[doc = r""]
+        #[doc = r" This requires the server to support it otherwise it might respond with an"]
+        #[doc = r" error."]
+        pub fn send_gzip(mut self) -> Self {
+            self.inner = self.inner.send_gzip();
+            self
+        }
+        #[doc = r" Enable decompressing responses with `gzip`."]
+        pub fn accept_gzip(mut self) -> Self {
+            self.inner = self.inner.accept_gzip();
+            self
         }
         #[doc = " Invoked by leader to replicate log entries; also used as heartbeat."]
         pub async fn append_entries(
@@ -244,22 +268,10 @@ pub mod raft_client {
             self.inner.unary(request.into_request(), path, codec).await
         }
     }
-    impl<T: Clone> Clone for RaftClient<T> {
-        fn clone(&self) -> Self {
-            Self {
-                inner: self.inner.clone(),
-            }
-        }
-    }
-    impl<T> std::fmt::Debug for RaftClient<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "RaftClient {{ ... }}")
-        }
-    }
 }
 #[doc = r" Generated server implementations."]
 pub mod raft_server {
-    #![allow(unused_variables, dead_code, missing_docs)]
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     #[doc = "Generated trait containing gRPC methods that should be implemented for use with RaftServer."]
     #[async_trait]
@@ -288,24 +300,31 @@ pub mod raft_server {
     #[derive(Debug)]
     pub struct RaftServer<T: Raft> {
         inner: _Inner<T>,
+        accept_compression_encodings: (),
+        send_compression_encodings: (),
     }
-    struct _Inner<T>(Arc<T>, Option<tonic::Interceptor>);
+    struct _Inner<T>(Arc<T>);
     impl<T: Raft> RaftServer<T> {
         pub fn new(inner: T) -> Self {
             let inner = Arc::new(inner);
-            let inner = _Inner(inner, None);
-            Self { inner }
+            let inner = _Inner(inner);
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+            }
         }
-        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
-            let inner = Arc::new(inner);
-            let inner = _Inner(inner, Some(interceptor.into()));
-            Self { inner }
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+        where
+            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
         }
     }
-    impl<T, B> Service<http::Request<B>> for RaftServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for RaftServer<T>
     where
         T: Raft,
-        B: HttpBody + Send + Sync + 'static,
+        B: Body + Send + Sync + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
@@ -332,17 +351,17 @@ pub mod raft_server {
                             Box::pin(fut)
                         }
                     }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let interceptor = inner.1.clone();
                         let inner = inner.0;
                         let method = AppendEntriesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = if let Some(interceptor) = interceptor {
-                            tonic::server::Grpc::with_interceptor(codec, interceptor)
-                        } else {
-                            tonic::server::Grpc::new(codec)
-                        };
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -363,17 +382,17 @@ pub mod raft_server {
                             Box::pin(fut)
                         }
                     }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let interceptor = inner.1.clone();
                         let inner = inner.0;
                         let method = VoteSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = if let Some(interceptor) = interceptor {
-                            tonic::server::Grpc::with_interceptor(codec, interceptor)
-                        } else {
-                            tonic::server::Grpc::new(codec)
-                        };
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -394,17 +413,17 @@ pub mod raft_server {
                             Box::pin(fut)
                         }
                     }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let interceptor = inner.1.clone();
                         let inner = inner.0;
                         let method = AddServerSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = if let Some(interceptor) = interceptor {
-                            tonic::server::Grpc::with_interceptor(codec, interceptor)
-                        } else {
-                            tonic::server::Grpc::new(codec)
-                        };
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -425,17 +444,17 @@ pub mod raft_server {
                             Box::pin(fut)
                         }
                     }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let interceptor = inner.1.clone();
                         let inner = inner.0;
                         let method = RemoveServerSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = if let Some(interceptor) = interceptor {
-                            tonic::server::Grpc::with_interceptor(codec, interceptor)
-                        } else {
-                            tonic::server::Grpc::new(codec)
-                        };
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -446,7 +465,7 @@ pub mod raft_server {
                         .status(200)
                         .header("grpc-status", "12")
                         .header("content-type", "application/grpc")
-                        .body(tonic::body::BoxBody::empty())
+                        .body(empty_body())
                         .unwrap())
                 }),
             }
@@ -455,12 +474,16 @@ pub mod raft_server {
     impl<T: Raft> Clone for RaftServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
-            Self { inner }
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+            }
         }
     }
     impl<T: Raft> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone(), self.1.clone())
+            Self(self.0.clone())
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {

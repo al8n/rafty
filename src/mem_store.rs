@@ -18,7 +18,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use parking_lot::RwLock;
 
 use crate::errors::Errors;
 use crate::log::{Log, LogStore};
@@ -28,72 +27,77 @@ use crate::Bytes;
 /// MemStore implements the LogStore and StableStore trait.
 /// It should NOT EVER be used for production. It is used only for
 /// unit tests. Use the MDBStore implementation instead.
-#[derive(Clone)]
 pub struct MemStore {
-    core: Arc<RwLock<MemStoreCore>>,
+    low_index: usize,
+    high_index: usize,
+    logs: HashMap<u64, Arc<Log>>,
+    kv: HashMap<String, Bytes>,
+    kv_int: HashMap<String, u64>,
 }
 
 impl MemStore {
     pub fn new() -> Self {
         Self {
-            core: MemStoreCore::new(),
+            low_index: 0,
+            high_index: 0,
+            logs: HashMap::new(),
+            kv: HashMap::new(),
+            kv_int: HashMap::new(),
         }
     }
 }
 
 impl LogStore for MemStore {
-    fn first_index(&self) -> Result<u64, Errors> {
-        Ok(self.core.read().low_index)
+    fn first_index(&self) -> Result<usize, Errors> {
+        Ok(self.low_index)
     }
 
-    fn last_index(&self) -> Result<u64, Errors> {
-        Ok(self.core.read().high_index)
+    fn last_index(&self) -> Result<usize, Errors> {
+        Ok(self.high_index)
     }
 
-    fn get_log(&self, index: u64) -> Result<Log, Errors> {
-        match self.core.read().logs.get(&index) {
+    fn get_log(&self, index: usize) -> Result<Arc<Log>, Errors> {
+        match self.logs.get(&(index as u64)) {
             None => Err(Errors::LogNotFound),
             Some(l) => Ok(l.clone()),
         }
     }
 
-    fn store_log(&mut self, log: Log) -> Result<(), Errors> {
+    fn store_log(&mut self, log: Arc<Log>) -> Result<(), Errors> {
         self.store_logs(vec![log])
     }
 
-    fn store_logs(&mut self, logs: Vec<Log>) -> Result<(), Errors> {
-        let ls = &mut self.core.write();
+    fn store_logs(&mut self, logs: Vec<Arc<Log>>) -> Result<(), Errors> {
         for l in logs.iter() {
-            ls.logs.insert(l.index, l.clone());
+            self.logs.insert(l.index, l.clone());
 
-            if ls.low_index == 0 {
-                ls.low_index = l.index;
+            if self.low_index == 0 {
+                self.low_index = l.index as usize;
             }
 
-            if l.index > ls.high_index {
-                ls.high_index = l.index;
+            if l.index > self.high_index as u64 {
+                self.high_index = l.index as usize;
             }
         }
         Ok(())
     }
 
     fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors> {
-        let c = &mut self.core.write();
-        for j in min..max {
-            c.logs.remove(&j);
+        for j in min..(max + 1) {
+            self.logs.remove(&j);
         }
 
-        if min <= c.low_index {
-            c.low_index = max + 1;
+        if min <= self.low_index as u64 {
+            self.low_index = (max + 1) as usize;
         }
 
-        if max >= c.high_index {
-            c.high_index = min - 1;
+        if max >= self.high_index as u64 {
+            self.high_index = (min - 1) as usize;
         }
 
-        if c.low_index > c.high_index {
-            c.low_index = 0;
-            c.high_index = 0;
+        if self.low_index > self.high_index {
+            self.low_index = 0;
+            self.high_index = 0;
         }
 
         Ok(())
@@ -101,9 +105,9 @@ impl LogStore for MemStore {
 }
 
 impl StableStore for MemStore {
-    fn set(&self, key: Bytes, val: Bytes) -> Result<()> {
+    fn set(&mut self, key: Bytes, val: Bytes) -> Result<()> {
         let key = String::from_utf8(key.to_vec())?;
-        self.core.write().kv.insert(key, val);
+        self.kv.insert(key, val);
         Ok(())
     }
 
@@ -111,7 +115,7 @@ impl StableStore for MemStore {
         let key = String::from_utf8(key.to_vec());
 
         match key {
-            Ok(key) => match self.core.read().kv.get(&key) {
+            Ok(key) => match self.kv.get(&key) {
                 None => Err(Errors::NotFound),
                 Some(val) => Ok(Bytes::from(val.clone())),
             },
@@ -119,9 +123,9 @@ impl StableStore for MemStore {
         }
     }
 
-    fn set_u64(&self, key: Bytes, val: u64) -> Result<()> {
+    fn set_u64(&mut self, key: Bytes, val: u64) -> Result<()> {
         let key = String::from_utf8(key.to_vec())?;
-        self.core.write().kv_int.insert(key, val);
+        self.kv_int.insert(key, val);
         Ok(())
     }
 
@@ -129,34 +133,12 @@ impl StableStore for MemStore {
         let key = String::from_utf8(key.to_vec());
 
         match key {
-            Ok(key) => match self.core.read().kv_int.get(&key) {
+            Ok(key) => match self.kv_int.get(&key) {
                 None => Err(Errors::NotFound),
                 Some(val) => Ok(*val),
             },
             Err(e) => Err(Errors::FromUtf8Error(e)),
         }
-    }
-}
-
-struct MemStoreCore {
-    low_index: u64,
-    high_index: u64,
-    logs: HashMap<u64, Log>,
-    kv: HashMap<String, Bytes>,
-    kv_int: HashMap<String, u64>,
-}
-
-impl MemStoreCore {
-    pub fn new() -> Arc<RwLock<Self>> {
-        let c = Self {
-            low_index: 0,
-            high_index: 0,
-            logs: HashMap::new(),
-            kv: HashMap::new(),
-            kv_int: HashMap::new(),
-        };
-
-        Arc::new(RwLock::new(c))
     }
 }
 
@@ -167,6 +149,7 @@ mod test {
     use crate::mem_store::MemStore;
     use crate::stable::StableStore;
     use bytes::Bytes;
+    use std::sync::Arc;
 
     #[test]
     fn test_log_store() -> anyhow::Result<()> {
@@ -175,11 +158,11 @@ mod test {
         assert_eq!(ms.first_index().unwrap(), 0);
         assert_eq!(ms.last_index().unwrap(), 0);
 
-        ms.store_log(Log::new(0, 0, LogType::Command))?;
+        ms.store_log(Arc::new(Log::new(0, 0, LogType::Command)))?;
         ms.store_logs(vec![
-            Log::new(1, 0, LogType::Command),
-            Log::new(2, 0, LogType::Command),
-            Log::new(3, 0, LogType::Command),
+            Arc::new(Log::new(1, 0, LogType::Command)),
+            Arc::new(Log::new(2, 0, LogType::Command)),
+            Arc::new(Log::new(3, 0, LogType::Command)),
         ])?;
 
         let l = ms.get_log(1)?;

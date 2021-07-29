@@ -21,11 +21,9 @@ use crossbeam::channel::Receiver;
 use parse_display::{Display, FromStr};
 use rmps::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::error::Error;
+use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::io::Cursor;
-use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 use tokio::io::AsyncRead;
 

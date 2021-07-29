@@ -20,7 +20,10 @@ use chrono::{DateTime, Utc};
 use crossbeam::channel::{select, Receiver};
 use derive_getters::Getters;
 use metrics::gauge;
+use parking_lot::RwLock;
 use parse_display::{Display, FromStr};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// LogType describes various types of log entries
@@ -114,29 +117,42 @@ impl Log {
     }
 }
 
+impl Default for Log {
+    fn default() -> Self {
+        Self {
+            index: 0,
+            term: 0,
+            typ: LogType::Command,
+            data: vec![],
+            extensions: vec![],
+            append_at: Utc::now(),
+        }
+    }
+}
+
 /// LogStore is used to provide an interface for storing
 /// and retrieving logs in a durable fashion.
 pub trait LogStore {
     /// `first_index` returns the first index written. 0 for no entries.
-    fn first_index(&self) -> Result<u64, Errors>;
+    fn first_index(&self) -> Result<usize, Errors>;
 
     /// `last_index` returns the last index written. 0 for no entries.
-    fn last_index(&self) -> Result<u64, Errors>;
+    fn last_index(&self) -> Result<usize, Errors>;
 
     /// `get_log` gets a log entry at a given index.
-    fn get_log(&self, index: u64) -> Result<Log, Errors>;
+    fn get_log(&self, index: usize) -> Result<Arc<Log>, Errors>;
 
     /// `store_log` stores a log entry
-    fn store_log(&mut self, log: Log) -> Result<(), Errors>;
+    fn store_log(&mut self, log: Arc<Log>) -> Result<(), Errors>;
 
     /// `store_logs` stores multiple log entries.
-    fn store_logs(&mut self, logs: Vec<Log>) -> Result<(), Errors>;
+    fn store_logs(&mut self, logs: Vec<Arc<Log>>) -> Result<(), Errors>;
 
     /// `delete_range` deletes a range of log entries. The range is inclusive.
     fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors>;
 
     /// `oldest_log` returns the oldest log in the store.
-    fn oldest_log(&self) -> Result<Log, Errors> {
+    fn oldest_log(&self) -> Result<Arc<Log>, Errors> {
         // We might get unlucky and have a truncate right between getting first log
         // index and fetching it so keep trying until we succeed or hard fail.
         let mut last_fail_idx = 0;
@@ -189,15 +205,81 @@ pub trait LogStore {
     }
 }
 
+/// `LogCache` wraps any `LogStore` implementation to provide an
+/// in-memory ring buffer. This is used to cache access to
+/// the recently written entries. For implementations that do not
+/// cache themselves, this can provide a substantial boost by
+/// avoiding disk I/O on recent entries.
+///
+/// TODO: Ring buffer is a temporary solution for cache.
+pub struct LogCache<T: LogStore> {
+    store: T,
+    cache: HashMap<usize, Arc<Log>>,
+    cap: usize,
+}
+
+impl<T: LogStore> LogCache<T> {
+    pub fn new(store: T, capacity: usize) -> Arc<RwLock<Self>> {
+        Arc::new(RwLock::new(Self {
+            store,
+            cache: HashMap::with_capacity(capacity),
+            cap: capacity,
+        }))
+    }
+}
+
+impl<T: LogStore> LogStore for LogCache<T> {
+    fn first_index(&self) -> Result<usize, Errors> {
+        self.store.first_index()
+    }
+
+    fn last_index(&self) -> Result<usize, Errors> {
+        self.store.last_index()
+    }
+
+    fn get_log(&self, index: usize) -> Result<Arc<Log>, Errors> {
+        let cached: Option<&Arc<Log>> = self.cache.get(&(index % self.cap));
+
+        match cached {
+            None => self.store.get_log(index),
+            Some(l) => Ok(l.clone()),
+        }
+    }
+
+    fn store_log(&mut self, log: Arc<Log>) -> Result<(), Errors> {
+        self.store.store_logs(vec![log])
+    }
+
+    fn store_logs(&mut self, logs: Vec<Arc<Log>>) -> Result<(), Errors> {
+        let rst = self.store.store_logs(logs.clone());
+        if let Err(e) = rst {
+            return Err(Errors::UnableToStoreLogs(format!("{}", e)));
+        }
+
+        for l in logs {
+            self.cache
+                .insert((l.index % self.cap as u64) as usize, l.clone());
+        }
+        Ok(())
+    }
+
+    fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors> {
+        self.cache.clear();
+        self.store.delete_range(min, max)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::log::{Log, LogStore, LogType};
+    use crate::errors::Errors;
+    use crate::log::{Log, LogCache, LogStore, LogType};
     use crate::mem_metrics::{
         get_gauge, get_registered, setup_mem_metrics, MetricsBasic, MetricsType,
     };
     use crate::mem_store::MemStore;
     use chrono::Utc;
     use metrics::{GaugeValue, Key};
+    use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
@@ -205,7 +287,7 @@ mod tests {
     fn test_oldest_log() {
         struct Case {
             name: String,
-            logs: Vec<Log>,
+            logs: Vec<Arc<Log>>,
             want_idx: u64,
             want_err: bool,
         }
@@ -220,30 +302,30 @@ mod tests {
             Case {
                 name: "simple case".to_string(),
                 logs: vec![
-                    Log {
+                    Arc::new(Log {
                         index: 1234,
                         term: 1,
                         typ: LogType::Command,
                         data: vec![],
                         extensions: vec![],
                         append_at: Utc::now(),
-                    },
-                    Log {
+                    }),
+                    Arc::new(Log {
                         index: 1235,
                         term: 1,
                         typ: LogType::Command,
                         data: vec![],
                         extensions: vec![],
                         append_at: Utc::now(),
-                    },
-                    Log {
+                    }),
+                    Arc::new(Log {
                         index: 1236,
                         term: 2,
                         typ: LogType::Command,
                         data: vec![],
                         extensions: vec![],
                         append_at: Utc::now(),
-                    },
+                    }),
                 ],
                 want_idx: 1234,
                 want_err: false,
@@ -275,30 +357,30 @@ mod tests {
         let mut s = MemStore::new();
 
         let logs = vec![
-            Log {
+            Arc::new(Log {
                 index: 1234,
                 term: 1,
                 typ: LogType::Command,
                 data: vec![],
                 extensions: vec![],
                 append_at: Utc::now(),
-            },
-            Log {
+            }),
+            Arc::new(Log {
                 index: 1235,
                 term: 1,
                 typ: LogType::Command,
                 data: vec![],
                 extensions: vec![],
                 append_at: Utc::now(),
-            },
-            Log {
+            }),
+            Arc::new(Log {
                 index: 1236,
                 term: 2,
                 typ: LogType::Command,
                 data: vec![],
                 extensions: vec![],
                 append_at: Utc::now(),
-            },
+            }),
         ];
 
         s.store_logs(logs).unwrap();
@@ -336,5 +418,84 @@ mod tests {
         assert_eq!(bi, MetricsBasic::from_type(MetricsType::Gauge));
 
         jh.join().unwrap();
+    }
+
+    #[test]
+    fn test_log_cache() {
+        let mut store = MemStore::new();
+        for i in 0..32 {
+            let l = Log {
+                index: i + 1,
+                term: 0,
+                typ: LogType::Command,
+                data: vec![],
+                extensions: vec![],
+                append_at: Utc::now(),
+            };
+            let _ = store.store_log(Arc::new(l));
+        }
+
+        let c = LogCache::<MemStore>::new(store, 20);
+        // Check the indexes
+        let s = c.read();
+        let idx = s.first_index().unwrap();
+        assert_eq!(idx, 1, "bad: {}", idx);
+
+        let idx = s.last_index().unwrap();
+        assert_eq!(idx, 32, "bad: {}", idx);
+
+        // Try get log with a miss
+        let l = s.get_log(1).unwrap();
+        assert_eq!(l.index, 1, "bad: {}", l.index);
+        drop(s);
+
+        // Store Logs
+        let l1 = {
+            let mut l = Log::default();
+            l.index = 33;
+            Arc::new(l)
+        };
+        let l2 = {
+            let mut l = Log::default();
+            l.index = 34;
+            Arc::new(l)
+        };
+
+        let mut s = c.write();
+        let rst = s.store_logs(vec![l1, l2]).unwrap();
+        assert_eq!(rst, ());
+        let idx = s.last_index().unwrap();
+        assert_eq!(idx, 34, "bad: {}", idx);
+        drop(s);
+        // // Check that it wrote-through
+        // let l = store.get_log(33).unwrap();
+        // assert_eq!(l.index, 33);
+        // let l = store.get_log(34).unwrap();
+        // assert_eq!(l.index, 34);
+        //
+        // // Delete in the backend
+        // let x = store.delete_range(33, 34).unwrap();
+        // assert_eq!((), x);
+
+        // Should be in the ring buffer
+        let s = c.read();
+        let l = s.get_log(33).unwrap();
+        assert_eq!(l.index, 33);
+        let l = s.get_log(34).unwrap();
+        assert_eq!(l.index, 34);
+        drop(s);
+
+        // Purge the ring buffer
+        let mut s = c.write();
+        let x = s.delete_range(33, 34).unwrap();
+        assert_eq!(x, ());
+        drop(s);
+
+        // Should not be in the ring buffer
+        let s = c.read();
+        let l = s.get_log(33).unwrap_err();
+        assert_eq!(l, Errors::LogNotFound);
+        let l = s.get_log(34).unwrap_err();
+        assert_eq!(l, Errors::LogNotFound);
     }
 }
