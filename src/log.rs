@@ -14,8 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::errors::Errors;
-use anyhow::Result;
+use crate::errors::Error;
 use chrono::{DateTime, Utc};
 use metrics::gauge;
 use parking_lot::RwLock;
@@ -192,38 +191,38 @@ impl Default for Log {
 /// and retrieving logs in a durable fashion.
 pub trait LogStore {
     /// `first_index` returns the first index written. 0 for no entries.
-    fn first_index(&self) -> Result<usize, Errors>;
+    fn first_index(&self) -> Result<usize, Error>;
 
     /// `last_index` returns the last index written. 0 for no entries.
-    fn last_index(&self) -> Result<usize, Errors>;
+    fn last_index(&self) -> Result<usize, Error>;
 
     /// `get_log` gets a log entry at a given index.
-    fn get_log(&self, index: usize) -> Result<Arc<Log>, Errors>;
+    fn get_log(&self, index: usize) -> Result<Arc<Log>, Error>;
 
     /// `store_log` stores a log entry
-    fn store_log(&mut self, log: Arc<Log>) -> Result<(), Errors>;
+    fn store_log(&mut self, log: Arc<Log>) -> Result<(), Error>;
 
     /// `store_logs` stores multiple log entries.
-    fn store_logs(&mut self, logs: Vec<Arc<Log>>) -> Result<(), Errors>;
+    fn store_logs(&mut self, logs: Vec<Arc<Log>>) -> Result<(), Error>;
 
     /// `delete_range` deletes a range of log entries. The range is inclusive.
-    fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors>;
+    fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Error>;
 }
 
 /// `oldest_log` returns the oldest log in the store.
-fn oldest_log<T>(store: T) -> Result<Arc<Log>, Errors>
+fn oldest_log<T>(store: T) -> Result<Arc<Log>, Error>
 where
     T: LogStore + Clone,
 {
     // We might get unlucky and have a truncate right between getting first log
     // index and fetching it so keep trying until we succeed or hard fail.
     let mut last_fail_idx = 0;
-    let mut last_err: Errors = Errors::LogNotFound;
+    let mut last_err: Error = Error::LogNotFound;
 
     loop {
         let first_idx = store.first_index()?;
         if first_idx == 0 {
-            return Err(Errors::LogNotFound);
+            return Err(Error::LogNotFound);
         }
 
         if first_idx == last_fail_idx {
@@ -248,7 +247,7 @@ where
 
 /// `emit_log_store_metrics` emits the information to the metrics
 #[cfg(feature = "default")]
-async fn emit_log_store_metrics<T>(
+pub async fn emit_log_store_metrics<T>(
     store: T,
     prefix: String,
     interval: Duration,
@@ -277,7 +276,7 @@ async fn emit_log_store_metrics<T>(
 
 /// `emit_log_store_metrics` emits the information to the metrics
 #[cfg(not(feature = "default"))]
-fn emit_log_store_metrics<T>(
+pub fn emit_log_store_metrics<T>(
     store: T,
     prefix: String,
     interval: Duration,
@@ -327,15 +326,15 @@ impl<T: LogStore> LogCache<T> {
 }
 
 impl<T: LogStore> LogStore for LogCache<T> {
-    fn first_index(&self) -> Result<usize, Errors> {
+    fn first_index(&self) -> Result<usize, Error> {
         self.store.first_index()
     }
 
-    fn last_index(&self) -> Result<usize, Errors> {
+    fn last_index(&self) -> Result<usize, Error> {
         self.store.last_index()
     }
 
-    fn get_log(&self, index: usize) -> Result<Arc<Log>, Errors> {
+    fn get_log(&self, index: usize) -> Result<Arc<Log>, Error> {
         let cached: Option<&Arc<Log>> = self.cache.get(&(index % self.cap));
 
         match cached {
@@ -344,14 +343,14 @@ impl<T: LogStore> LogStore for LogCache<T> {
         }
     }
 
-    fn store_log(&mut self, log: Arc<Log>) -> Result<(), Errors> {
+    fn store_log(&mut self, log: Arc<Log>) -> Result<(), Error> {
         self.store.store_logs(vec![log])
     }
 
-    fn store_logs(&mut self, logs: Vec<Arc<Log>>) -> Result<(), Errors> {
+    fn store_logs(&mut self, logs: Vec<Arc<Log>>) -> Result<(), Error> {
         let rst = self.store.store_logs(logs.clone());
         if let Err(e) = rst {
-            return Err(Errors::UnableToStoreLogs(format!("{}", e)));
+            return Err(Error::UnableToStoreLogs(format!("{}", e)));
         }
 
         for l in logs {
@@ -361,7 +360,7 @@ impl<T: LogStore> LogStore for LogCache<T> {
         Ok(())
     }
 
-    fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors> {
+    fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Error> {
         self.cache.clear();
         self.store.delete_range(min, max)
     }
@@ -369,7 +368,7 @@ impl<T: LogStore> LogStore for LogCache<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::errors::Errors;
+    use crate::errors::Error;
     use crate::log::{emit_log_store_metrics, oldest_log, Log, LogCache, LogStore, LogType};
     use crate::mem_metrics::{
         get_gauge, get_registered, setup_mem_metrics, MetricsBasic, MetricsType,
@@ -532,14 +531,14 @@ mod tests {
         let logs = mock_logs();
         s.store_logs(logs).unwrap();
 
-        let (stop_ch_tx, stop_ch_rx) = crossbeam::channel::bounded::<()>(1);
+        let (stop_ch_tx, mut stop_ch_rx) = crossbeam::channel::bounded::<()>(1);
 
         std::thread::spawn(move || {
             emit_log_store_metrics(
                 s,
                 "raft.test".to_string(),
                 std::time::Duration::from_millis(100),
-                stop_ch_rx,
+                &mut stop_ch_rx,
             );
         });
 
@@ -631,8 +630,8 @@ mod tests {
         // Should not be in the ring buffer
         let s = c.read();
         let l = s.get_log(33).unwrap_err();
-        assert_eq!(l, Errors::LogNotFound);
+        assert_eq!(l, Error::LogNotFound);
         let l = s.get_log(34).unwrap_err();
-        assert_eq!(l, Errors::LogNotFound);
+        assert_eq!(l, Error::LogNotFound);
     }
 }

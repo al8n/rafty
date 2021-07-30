@@ -14,20 +14,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::errors::Errors;
+use crate::errors::Error;
 use crate::Bytes;
-use anyhow::Result;
 
 /// `StableStore` is used to provide stable storage
 /// of key configurations to ensure safety.
 pub trait StableStore {
-    fn set(&mut self, key: Bytes, val: Bytes) -> Result<()>;
+    fn set(&mut self, key: Bytes, val: Bytes) -> Result<(), Error>;
 
     /// `get` returns the value for key, or an empty byte slice if key was not found
-    fn get(&self, key: Bytes) -> Result<Bytes, Errors>;
+    fn get(&self, key: Bytes) -> Result<Bytes, Error>;
 
-    fn set_u64(&mut self, key: Bytes, val: u64) -> Result<()>;
+    fn set_u64(&mut self, key: Bytes, val: u64) -> Result<(), Error>;
 
     /// `get_u64` returns the u64 value for key, or 0 if key was not found.
-    fn get_u64(&self, key: Bytes) -> Result<u64, Errors>;
+    fn get_u64(&self, key: Bytes) -> Result<u64, Error>;
 }

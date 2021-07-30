@@ -14,10 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::errors::Errors;
-use anyhow::Result;
+use crate::errors::Error;
 
 pub trait SnapshotSink {
     fn id(&self) -> String;
-    fn cancel(&self) -> Result<(), Errors>;
+    fn cancel(&self) -> Result<(), Error>;
 }

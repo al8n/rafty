@@ -7,13 +7,13 @@ extern crate lazy_static;
 #[macro_use]
 mod macros;
 
-mod commands;
+pub mod commands;
 /// `errors` module contains the custom errors in this crate.
-mod errors;
+pub mod errors;
 
-mod log;
-mod mem_metrics;
-mod mem_store;
+pub mod log;
+pub mod mem_metrics;
+pub mod mem_store;
 
 
 cfg_default!(
@@ -21,8 +21,8 @@ cfg_default!(
     pub mod pb;
 );
 
-mod stable;
-mod state;
+pub mod stable;
+pub mod state;
 
 /// Finite State Machine
 pub mod fsm;
@@ -30,11 +30,11 @@ pub mod fsm;
 /// Log compaction trait
 pub mod snapshot;
 
-mod commitment;
+pub mod commitment;
 /// The configuration for a Raft node
 pub mod config;
-mod idgen;
-mod utils;
+pub mod idgen;
+pub mod utils;
 
 /// `Bytes` is alias for `Vec<u8>`
 pub type Bytes = Vec<u8>;

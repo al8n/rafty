@@ -14,10 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::errors::Errors;
+use crate::errors::Error;
 use crate::log::Log;
 use crate::snapshot::SnapshotSink;
-use anyhow::Result;
 use chrono::Utc;
 
 /// `FSM` provides an trait that can be implemented by
@@ -39,7 +38,11 @@ pub trait FSM<T> {
 
     /// `restore` is used to restore an `FSM` from a snapshot. It is not called
     /// concurrently with any other command. The `FSM` must discard all previous state.
-    fn restore(&self, r: Box<dyn tokio::io::AsyncRead>) -> Result<(), std::io::Error>;
+    #[cfg(feature = "default")]
+    fn restore(&self, r: Box<dyn tokio::io::AsyncRead>) -> Result<(), Error>;
+
+    #[cfg(not(feature = "default"))]
+    fn restore(&self, r: Box<dyn std::io::Read>) -> Result<(), Error>;
 }
 
 /// `BatchingFSM` extends the `FSM` interface to add an `apply_batch` function. This can
@@ -66,7 +69,7 @@ pub trait BatchingFSM<T>: FSM<T> {
 pub trait FSMSnapshot {
     /// `persist` should dump all necessary state to the WriteCloser 'sink',
     /// and call `sink.close` when finished or call `sink.cancel` on error.
-    fn persist(&self, sink: dyn SnapshotSink) -> Result<(), Errors>;
+    fn persist(&self, sink: dyn SnapshotSink) -> Result<(), Error>;
 
     /// `release` is invoked when we are finished with the snapshot.
     fn release(&self);
@@ -74,13 +77,32 @@ pub trait FSMSnapshot {
 
 // TODO: fsm.go line 69: func(r *Raft) runFSM() {}
 
+
 /// `fsm_restore_and_measure` wraps the `restore` call on an `FSM` to consistently measure
 /// and report timing metrics. The caller is still responsible for calling Close
 /// on the source in all cases.
+#[cfg(feature = "default")]
 fn fsm_restore_and_measure<T>(
     fsm: Box<dyn FSM<T>>,
     source: Box<dyn tokio::io::AsyncRead>,
-) -> Result<()> {
+) -> Result<(), Error> {
+    let start = Utc::now();
+    fsm.restore(source)?;
+
+    metrics::gauge!("raft.fsm.restore", start.timestamp_millis() as f64);
+    let duration = Utc::now().signed_duration_since(start).num_milliseconds() as f64;
+    metrics::gauge!("raft.fsm.last.restore.duration", duration);
+    Ok(())
+}
+
+/// `fsm_restore_and_measure` wraps the `restore` call on an `FSM` to consistently measure
+/// and report timing metrics. The caller is still responsible for calling Close
+/// on the source in all cases.
+#[cfg(not(feature = "default"))]
+fn fsm_restore_and_measure<T>(
+    fsm: Box<dyn FSM<T>>,
+    source: Box<dyn std::io::Read>,
+) -> Result<(), Error> {
     let start = Utc::now();
     fsm.restore(source)?;
 

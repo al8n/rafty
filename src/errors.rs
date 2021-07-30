@@ -1,85 +1,73 @@
 use std::string::FromUtf8Error;
-use thiserror::Error;
+use std::fmt::Formatter;
 
-/// `Errors` represents custom errors in this crate.
-#[derive(Error, Debug, Eq, PartialEq)]
-pub enum Errors {
+/// `Error` represents custom errors in this crate.
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum Error {
     /// `LogNotFound` when the specific log entry is not found
-    #[error("log not found")]
     LogNotFound,
 
-    #[error("unable to store logs within log store, err: {0}")]
+    /// `UnableToStoreLogs` unable to store logs within log store
     UnableToStoreLogs(String),
 
     /// `NotFound` when some else is not found, which is different from `LogNotFound`
-    #[error("not found")]
     NotFound,
 
     /// `FromUtf8Error` when cannot convert UTF8 bytes to `String`
-    #[error("cannot convert UTF8 to String")]
-    FromUtf8Error(#[from] FromUtf8Error),
+    FromUtf8Error(FromUtf8Error),
 
-    // config related errors
-    #[error("local_id cannot be empty")]
+    /// local_id cannot be empty
     EmptyLocalID,
 
-    #[error("heartbeat_timeout is too low")]
+    /// heartbeat_timeout is too low
     ShortHeartbeatTimeout,
 
-    #[error("election_timeout is too low")]
+    /// election_timeout is too low
     ShortElectionTimeout,
 
-    #[error("commit_timeout is too low")]
+    /// commit_timeout is too low
     ShortCommitTimeout,
 
-    #[error("max_append_entries is too large")]
+    /// max_append_entries is too large
     LargeMaxAppendEntries,
 
-    #[error("snapshot_interval is too short")]
+    /// snapshot_interval is too short
     ShortSnapshotInterval,
 
-    #[error("leader_lease_timeout is too short")]
+    /// leader_lease_timeout is too short
     ShortLeaderLeaseTimeout,
 
-    #[error("leader_lease_timeout cannot be larger than heartbeat timeout")]
+    /// leader_lease_timeout cannot be larger than heartbeat timeout
     LeaderLeaseTimeoutLargerThanHeartbeatTimeout,
 
-    #[error("election_timeout must be equal or greater than heartbeat timeout")]
+    /// election_timeout must be equal or greater than heartbeat timeout
     ElectionTimeoutSmallerThanHeartbeatTimeout,
 
-    // API related errors
     /// `ErrLeader` is returned when an operation can't be completed on a
     /// leader node.
-    #[error("node is the leader")]
     Leader,
 
     /// `ErrNotLeader` is returned when an operation can't be completed on a
     /// follower or candidate node.
-    #[error("node is not the leader")]
     NotLeader,
 
     /// `ErrLeadershipLost` is returned when a leader fails to commit a log entry
     /// because it's been deposed in the process.
-    #[error("leadership lost while committing log")]
     LeadershipLost,
 
     /// `AbortedByRestore` is returned when a leader fails to commit a log
     /// entry because it's been superseded by a user snapshot restore.
-    #[error("snapshot restored while committing log")]
     AbortedByRestore,
 
     /// `RaftShutdown` is returned when operations are requested against an
     /// inactive Raft.
-    #[error("raft is already shutdown")]
     RaftShutdown,
 
     /// `EnqueueTimeout` is returned when a command fails due to a timeout.
-    #[error("timed out enqueuing operation")]
     EnqueueTimeout,
 
     /// `NothingNewToSnapshot` is returned when trying to create a snapshot
     /// but there's nothing new committed to the `FSM` since we started.
-    #[error("nothing new to snapshot")]
     NothingNewToSnapshot,
 
     // /// `UnsupportedProtocol` is returned when an operation is attempted
@@ -88,23 +76,67 @@ pub enum Errors {
     // UnsupportedProtocol,
     /// `CantBootstrap` is returned when attempt is made to bootstrap a
     /// cluster that already has state present.
-    #[error("bootstrap only works on new clusters")]
     CantBootstrap,
 
     /// `LeadershipTransferInProgress` is returned when the leader is rejecting
     /// client requests because it is attempting to transfer leadership.
-    #[error("leadership transfer in progress")]
     LeadershipTransferInProgress,
 
-    #[error("found duplicate server ID in configuration: `{0}`")]
+    /// `DuplicateServerID` found duplicate server ID in configuration
     DuplicateServerID(u64),
 
-    #[error("found duplicate server address in configuration: `{0}`")]
+    /// `DuplicateServerAddress` found duplicate server address in configuration
     DuplicateServerAddress(String),
 
-    #[error("need at least one voter in configuration")]
+    /// `NonVoter` need at least one voter in configuration
     NonVoter,
 
-    #[error("configuration changed since {prev_index} (latest is {current_index})")]
+    /// `ConfigurationChanged` configuration changed since prev_index (latest is current_index)
     ConfigurationChanged { current_index: u64, prev_index: u64 },
+
+    /// `FSMRestore` error
+    FSMRestore(String),
+}
+
+impl std::error::Error for Error {}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::LogNotFound => write!(f, "log not found"),
+            Error::UnableToStoreLogs(s) => write!(f, "unable to store logs within log store, err: {}", *s),
+            Error::NotFound => write!(f, "not found"),
+            Error::EmptyLocalID => write!(f, "local_id cannot be empty"),
+            Error::ShortHeartbeatTimeout => write!(f, "heartbeat_timeout is too low"),
+            Error::ShortElectionTimeout => write!(f, "election_timeout is too low"),
+            Error::ShortCommitTimeout => write!(f, "commit_timeout is too low"),
+            Error::LargeMaxAppendEntries => write!(f, " max_append_entries is too large"),
+            Error::ShortSnapshotInterval => write!(f, "snapshot_interval is too short"),
+            Error::ShortLeaderLeaseTimeout => write!(f, "leader_lease_timeout is too short"),
+            Error::LeaderLeaseTimeoutLargerThanHeartbeatTimeout => write!(f, "leader_lease_timeout cannot be larger than heartbeat timeout"),
+            Error::ElectionTimeoutSmallerThanHeartbeatTimeout => write!(f, "election_timeout must be equal or greater than heartbeat timeout"),
+            Error::FromUtf8Error(e) => write!(f, "cannot convert UTF8 to String. From: {}", *e),
+            Error::Leader => write!(f, "node is the leader"),
+            Error::NotLeader => write!(f, "node is not the leader"),
+            Error::LeadershipLost => write!(f, "leadership lost while committing log"),
+            Error::AbortedByRestore => write!(f, "snapshot restored while committing log"),
+            Error::RaftShutdown => write!(f, "raft is already shutdown"),
+            Error::EnqueueTimeout => write!(f, "timed out enqueuing operation"),
+            Error::NothingNewToSnapshot => write!(f, "othing new to snapshot"),
+            Error::CantBootstrap => write!(f, "bootstrap only works on new clusters"),
+            Error::LeadershipTransferInProgress => write!(f, "leadership transfer in progress"),
+            Error::DuplicateServerID(id) => write!(f, "found duplicate server ID in configuration: {}", *id),
+            Error::DuplicateServerAddress(addr) => write!(f, "found duplicate server address in configuration: {}", *addr),
+            Error::NonVoter => write!(f, "need at least one voter in configuration"),
+            Error::ConfigurationChanged { current_index, prev_index } => write!(f, "configuration changed since {} (latest is {})", *prev_index, *current_index),
+            #[cfg(feature = "default")]
+            Error::FSMRestore(e) => write!(f, "FSM restore IO error. From: {}", *e),
+        }
+    }
+}
+
+impl From<FromUtf8Error> for Error {
+    fn from(e: FromUtf8Error) -> Self {
+        Self::FromUtf8Error(e)
+    }
 }

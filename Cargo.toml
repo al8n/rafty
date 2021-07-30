@@ -12,6 +12,9 @@ license = "Apache-2.0"
 repository = "https://github.com/al8n/rafty"
 readme = "./README.md"
 
+[workspace]
+members = ["examples/sync", "examples/async"]
+
 [features]
 sync = ["crossbeam"]
 default = ["tokio", "futures", "tracing-futures", "tonic", "tonic-build", "prost"]
@@ -42,10 +45,8 @@ version = "0.8.0"
 optional = true
 
 [dependencies]
-anyhow = "1"
 bytes = "1.0.1"
 chrono = {version = "0.4.19", features = ["serde"]}
-thiserror = "1"
 lazy_static = "1.4.0"
 log = "0.4"
 metrics = "0.16.0"

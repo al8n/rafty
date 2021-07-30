@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::errors::Errors;
+use crate::errors::Error;
 use crate::fsm::{FSMSnapshot, FSM};
 use crate::log::Log;
 use parse_display::{Display, FromStr};
@@ -23,13 +23,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::time::Duration;
-#[cfg(not(feature = "default"))]
-use crossbeam::channel::Receiver;
-#[cfg(feature = "default")]
-use tokio::{
-    io::AsyncRead,
-    sync::mpsc::UnboundedReceiver
-};
+
+cfg_sync!(
+    use crossbeam::channel::Receiver;
+    use std::io::Read;
+);
+
+cfg_default!(
+    use tokio::{
+        io::AsyncRead,
+        sync::mpsc::UnboundedReceiver
+    };
+);
+
 use std::sync::Arc;
 
 
@@ -212,41 +218,41 @@ pub struct Config {
 impl Config {
     /// `validate_config` is used to validate a sane configuration
     #[inline]
-    fn validate_config(self) -> Result<Self, Errors> {
+    fn validate_config(self) -> Result<Self, Error> {
         if self.local_id == 0 {
-            return Err(Errors::EmptyLocalID);
+            return Err(Error::EmptyLocalID);
         }
 
         if self.heartbeat_timeout < Duration::from_millis(5) {
-            return Err(Errors::ShortHeartbeatTimeout);
+            return Err(Error::ShortHeartbeatTimeout);
         }
 
         if self.election_timeout < Duration::from_millis(5) {
-            return Err(Errors::ShortElectionTimeout);
+            return Err(Error::ShortElectionTimeout);
         }
 
         if self.commit_timeout < Duration::from_millis(1) {
-            return Err(Errors::ShortCommitTimeout);
+            return Err(Error::ShortCommitTimeout);
         }
 
         if self.max_append_entries > 1024 {
-            return Err(Errors::LargeMaxAppendEntries);
+            return Err(Error::LargeMaxAppendEntries);
         }
 
         if self.snapshot_interval < Duration::from_millis(5) {
-            return Err(Errors::ShortSnapshotInterval);
+            return Err(Error::ShortSnapshotInterval);
         }
 
         if self.leader_lease_timeout < Duration::from_millis(5) {
-            return Err(Errors::ShortLeaderLeaseTimeout);
+            return Err(Error::ShortLeaderLeaseTimeout);
         }
 
         if self.leader_lease_timeout > self.heartbeat_timeout {
-            return Err(Errors::LeaderLeaseTimeoutLargerThanHeartbeatTimeout);
+            return Err(Error::LeaderLeaseTimeoutLargerThanHeartbeatTimeout);
         }
 
         if self.election_timeout < self.heartbeat_timeout {
-            return Err(Errors::ElectionTimeoutSmallerThanHeartbeatTimeout);
+            return Err(Error::ElectionTimeoutSmallerThanHeartbeatTimeout);
         }
 
         Ok(self)
@@ -464,13 +470,13 @@ impl ConfigBuilder {
         self
     }
 
-    /// `finalize` returns a `Result<Config, Errors>`
+    /// `finalize` returns a `Result<Config, Error>`
     #[cfg(feature = "default")]
     #[inline]
     pub fn finalize(
         self,
         notify_ch: UnboundedReceiver<bool>,
-    ) -> Result<Config, Errors> {
+    ) -> Result<Config, Error> {
         let c = Config {
             protocol_version: self.protocol_version.unwrap(),
             heartbeat_timeout: self.heartbeat_timeout.unwrap(),
@@ -492,13 +498,13 @@ impl ConfigBuilder {
         c.validate_config()
     }
 
-    /// `finalize` returns a `Result<Config, Errors>`
+    /// `finalize` returns a `Result<Config, Error>`
     #[cfg(not(feature = "default"))]
     #[inline]
     pub fn finalize(
         self,
         notify_ch: Receiver<bool>,
-    ) -> Result<Config, Errors> {
+    ) -> Result<Config, Error> {
         let c = Config {
             protocol_version: self.protocol_version.unwrap(),
             heartbeat_timeout: self.heartbeat_timeout.unwrap(),
@@ -709,7 +715,13 @@ impl<T> FSM<T> for NopConfigurationStore {
         todo!()
     }
 
-    fn restore(&self, r: Box<dyn AsyncRead>) -> anyhow::Result<(), std::io::Error> {
+    #[cfg(feature = "default")]
+    fn restore(&self, r: Box<dyn AsyncRead>) -> Result<(), Error> {
+        todo!()
+    }
+
+    #[cfg(not(feature = "default"))]
+    fn restore(&self, r: Box<dyn Read>) -> Result<(), Error> {
         todo!()
     }
 }
@@ -789,7 +801,7 @@ fn has_vote(configuration: Configuration, id: ServerID) -> bool {
 
 /// `check_configuration` tests a cluster membership configuration for common
 /// errors.
-fn check_configuration(configuration: Configuration) -> Result<Configuration, Errors> {
+fn check_configuration(configuration: Configuration) -> Result<Configuration, Error> {
     let mut id_set = HashMap::<ServerID, bool>::new();
     let mut address_set = HashMap::<ServerAddress, bool>::new();
     let mut voters = 0;
@@ -797,12 +809,12 @@ fn check_configuration(configuration: Configuration) -> Result<Configuration, Er
         // TODO: check whether server id is valid
 
         if let Some(_) = id_set.get(&s.id) {
-            return Err(Errors::DuplicateServerID(s.id));
+            return Err(Error::DuplicateServerID(s.id));
         }
         id_set.insert(s.id, true);
 
         if let Some(_) = address_set.get(&s.address) {
-            return Err(Errors::DuplicateServerAddress(s.clone().address));
+            return Err(Error::DuplicateServerAddress(s.clone().address));
         }
 
         address_set.insert(s.clone().address, true);
@@ -812,7 +824,7 @@ fn check_configuration(configuration: Configuration) -> Result<Configuration, Er
     }
 
     if voters == 0 {
-        return Err(Errors::NonVoter);
+        return Err(Error::NonVoter);
     }
 
     Ok(configuration)
@@ -825,9 +837,9 @@ fn next_configuration(
     current: Configuration,
     current_index: u64,
     change: ConfigurationChangeRequest,
-) -> Result<Configuration, Errors> {
+) -> Result<Configuration, Error> {
     if change.prev_index > 0 && change.prev_index != current_index {
-        return Err(Errors::ConfigurationChanged {
+        return Err(Error::ConfigurationChanged {
             current_index,
             prev_index: change.prev_index,
         });

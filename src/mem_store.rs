@@ -16,10 +16,7 @@
  */
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use anyhow::Result;
-
-use crate::errors::Errors;
+use crate::errors::Error;
 use crate::log::{Log, LogStore};
 use crate::stable::StableStore;
 use crate::Bytes;
@@ -49,26 +46,26 @@ impl MemStore {
 }
 
 impl LogStore for MemStore {
-    fn first_index(&self) -> Result<usize, Errors> {
+    fn first_index(&self) -> Result<usize, Error> {
         Ok(self.low_index)
     }
 
-    fn last_index(&self) -> Result<usize, Errors> {
+    fn last_index(&self) -> Result<usize, Error> {
         Ok(self.high_index)
     }
 
-    fn get_log(&self, index: usize) -> Result<Arc<Log>, Errors> {
+    fn get_log(&self, index: usize) -> Result<Arc<Log>, Error> {
         match self.logs.get(&(index as u64)) {
-            None => Err(Errors::LogNotFound),
+            None => Err(Error::LogNotFound),
             Some(l) => Ok(l.clone()),
         }
     }
 
-    fn store_log(&mut self, log: Arc<Log>) -> Result<(), Errors> {
+    fn store_log(&mut self, log: Arc<Log>) -> Result<(), Error> {
         self.store_logs(vec![log])
     }
 
-    fn store_logs(&mut self, logs: Vec<Arc<Log>>) -> Result<(), Errors> {
+    fn store_logs(&mut self, logs: Vec<Arc<Log>>) -> Result<(), Error> {
         for l in logs.iter() {
             self.logs.insert(l.index, l.clone());
 
@@ -83,7 +80,7 @@ impl LogStore for MemStore {
         Ok(())
     }
 
-    fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Errors> {
+    fn delete_range(&mut self, min: u64, max: u64) -> Result<(), Error> {
         for j in min..(max + 1) {
             self.logs.remove(&j);
         }
@@ -106,46 +103,46 @@ impl LogStore for MemStore {
 }
 
 impl StableStore for MemStore {
-    fn set(&mut self, key: Bytes, val: Bytes) -> Result<()> {
+    fn set(&mut self, key: Bytes, val: Bytes) -> Result<(), Error> {
         let key = String::from_utf8(key.to_vec())?;
         self.kv.insert(key, val);
         Ok(())
     }
 
-    fn get(&self, key: Bytes) -> Result<Bytes, Errors> {
+    fn get(&self, key: Bytes) -> Result<Bytes, Error> {
         let key = String::from_utf8(key.to_vec());
 
         match key {
             Ok(key) => match self.kv.get(&key) {
-                None => Err(Errors::NotFound),
+                None => Err(Error::NotFound),
                 Some(val) => Ok(Bytes::from(val.clone())),
             },
-            Err(e) => Err(Errors::FromUtf8Error(e)),
+            Err(e) => Err(Error::FromUtf8Error(e)),
         }
     }
 
-    fn set_u64(&mut self, key: Bytes, val: u64) -> Result<()> {
+    fn set_u64(&mut self, key: Bytes, val: u64) -> Result<(), Error> {
         let key = String::from_utf8(key.to_vec())?;
         self.kv_int.insert(key, val);
         Ok(())
     }
 
-    fn get_u64(&self, key: Bytes) -> Result<u64, Errors> {
+    fn get_u64(&self, key: Bytes) -> Result<u64, Error> {
         let key = String::from_utf8(key.to_vec());
 
         match key {
             Ok(key) => match self.kv_int.get(&key) {
-                None => Err(Errors::NotFound),
+                None => Err(Error::NotFound),
                 Some(val) => Ok(*val),
             },
-            Err(e) => Err(Errors::FromUtf8Error(e)),
+            Err(e) => Err(Error::FromUtf8Error(e)),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::errors::Errors;
+    use crate::errors::Error;
     use crate::log::{Log, LogStore, LogType};
     use crate::mem_store::MemStore;
     use crate::stable::StableStore;
@@ -153,7 +150,7 @@ mod test {
     use std::sync::Arc;
 
     #[test]
-    fn test_log_store() -> anyhow::Result<()> {
+    fn test_log_store() -> Result<(), Error> {
         let mut ms = MemStore::new();
 
         assert_eq!(ms.first_index().unwrap(), 0);
@@ -172,7 +169,7 @@ mod test {
         ms.delete_range(0, 2)?;
 
         let not_found = ms.get_log(1);
-        assert_eq!(Errors::LogNotFound, not_found.unwrap_err());
+        assert_eq!(Error::LogNotFound, not_found.unwrap_err());
 
         ms.set("abc".as_bytes().to_vec(), "val".as_bytes().to_vec())?;
         ms.set_u64("u64".as_bytes().to_vec(), 69)?;
