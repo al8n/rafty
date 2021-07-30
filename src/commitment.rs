@@ -18,15 +18,25 @@ use crate::config::{Configuration, ServerID, ServerSuffrage};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
+#[cfg(feature = "default")]
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+#[cfg(not(feature = "default"))]
+use crossbeam::channel::{Receiver, Sender};
 
 /// `Commitment` is used to advance the leader's commit index. The leader and
 /// replication routines report in newly written entries with Match(), and
 /// this notifies on commit_ch when the commit index has advanced.
 pub struct Commitment {
     /// notified when commitIndex increases
+    #[cfg(feature = "default")]
     commit_rx_ch: UnboundedReceiver<()>,
+    #[cfg(feature = "default")]
     commit_tx_ch: UnboundedSender<()>,
+
+    #[cfg(not(feature = "default"))]
+    commit_rx_ch: Receiver<()>,
+    #[cfg(not(feature = "default"))]
+    commit_tx_ch: Sender<()>,
 
     /// voter ID to log index: the server stores up through this log entry
     match_indexes: HashMap<ServerID, u64>,
@@ -41,8 +51,14 @@ pub struct Commitment {
 
 impl Commitment {
     pub fn new(
+        #[cfg(feature = "default")]
         commit_tx_ch: UnboundedSender<()>,
+        #[cfg(feature = "default")]
         commit_rx_ch: UnboundedReceiver<()>,
+        #[cfg(not(feature = "default"))]
+        commit_tx_ch: Sender<()>,
+        #[cfg(not(feature = "default"))]
+        commit_rx_ch: Receiver<()>,
         cfg: Configuration,
         start_index: u64,
     ) -> Arc<Mutex<Self>> {

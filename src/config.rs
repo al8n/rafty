@@ -17,15 +17,21 @@
 use crate::errors::Errors;
 use crate::fsm::{FSMSnapshot, FSM};
 use crate::log::Log;
-use crossbeam::channel::Receiver;
 use parse_display::{Display, FromStr};
 use rmps::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt::Formatter;
 use std::io::Cursor;
 use std::time::Duration;
-use tokio::io::AsyncRead;
+#[cfg(not(feature = "default"))]
+use crossbeam::channel::Receiver;
+#[cfg(feature = "default")]
+use tokio::{
+    io::AsyncRead,
+    sync::mpsc::UnboundedReceiver
+};
+use std::sync::Arc;
+
 
 static DEFAULT_HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(1000);
 static DEFAULT_ELECTION_TIMEOUT: Duration = Duration::from_millis(1000);
@@ -176,7 +182,11 @@ pub struct Config {
     /// `notify_ch` is used to provide a channel that will be notified of leadership
     /// changes. Raft will block writing to this channel, so it should either be
     /// buffered or aggressively consumed.
+    #[cfg(not(feature = "default"))]
     notify_ch: Receiver<bool>,
+
+    #[cfg(feature = "default")]
+    notify_ch: Arc<UnboundedReceiver<bool>>,
 
     // TODO: log related fields start
     /// `log_output` is used as a sink for logs, unless `logger` is specified.
@@ -455,8 +465,40 @@ impl ConfigBuilder {
     }
 
     /// `finalize` returns a `Result<Config, Errors>`
+    #[cfg(feature = "default")]
     #[inline]
-    pub fn finalize(self, notify_ch: Receiver<bool>) -> Result<Config, Errors> {
+    pub fn finalize(
+        self,
+        notify_ch: UnboundedReceiver<bool>,
+    ) -> Result<Config, Errors> {
+        let c = Config {
+            protocol_version: self.protocol_version.unwrap(),
+            heartbeat_timeout: self.heartbeat_timeout.unwrap(),
+            election_timeout: self.election_timeout.unwrap(),
+            commit_timeout: self.commit_timeout.unwrap(),
+            max_append_entries: self.max_append_entries.unwrap(),
+            batch_apply_ch: self.batch_apply_ch.unwrap(),
+            shut_down_on_remove: self.shut_down_on_remove.unwrap(),
+            trailing_logs: self.trailing_logs.unwrap(),
+            snapshot_interval: self.snapshot_interval.unwrap(),
+            snapshot_threshold: self.snapshot_threshold.unwrap(),
+            leader_lease_timeout: self.leader_lease_timeout.unwrap(),
+            local_id: self.local_id.unwrap(),
+            notify_ch: Arc::new(notify_ch),
+            no_snapshot_restore_on_start: self.no_snapshot_restore_on_start.unwrap(),
+            skip_startup: self.skip_startup.unwrap(),
+        };
+
+        c.validate_config()
+    }
+
+    /// `finalize` returns a `Result<Config, Errors>`
+    #[cfg(not(feature = "default"))]
+    #[inline]
+    pub fn finalize(
+        self,
+        notify_ch: Receiver<bool>,
+    ) -> Result<Config, Errors> {
         let c = Config {
             protocol_version: self.protocol_version.unwrap(),
             heartbeat_timeout: self.heartbeat_timeout.unwrap(),
@@ -598,18 +640,13 @@ pub struct Server {
     pub address: ServerAddress,
 }
 
-impl std::fmt::Display for Server {
-    #[cfg(test)]
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {} {}", self.suffrage, self.id, self.address)
+cfg_test!(
+    impl std::fmt::Display for Server {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{} {} {}", self.suffrage, self.id, self.address)
+        }
     }
-
-    #[cfg(not(test))]
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        // TODO: rewrite method for not test
-        write!(f, "{} {} {}", self.suffrage, self.id, self.address)
-    }
-}
+);
 
 /// `Configuration` tracks which servers are in the cluster, and whether they have
 /// votes. This should include the local server, if it's a member of the cluster.
@@ -632,28 +669,19 @@ impl Configuration {
     }
 }
 
-impl std::fmt::Display for Configuration {
-    #[cfg(test)]
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let x = self
-            .servers
-            .iter()
-            .map(|val| format!("{{{}}}", *val))
-            .collect::<Vec<String>>();
-        write!(f, "{{[{}]}}", x.join(" "))
+cfg_test!(
+    impl std::fmt::Display for Configuration {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let x = self
+                .servers
+                .iter()
+                .map(|val| format!("{{{}}}", *val))
+                .collect::<Vec<String>>();
+            write!(f, "{{[{}]}}", x.join(" "))
+        }
     }
+);
 
-    #[cfg(not(test))]
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        // TODO: rewrite method for not test
-        let x = self
-            .servers
-            .iter()
-            .map(|val| format!("{{{}}}", *val))
-            .collect::<Vec<String>>();
-        write!(f, "{{[{}]}}", x.join(" "))
-    }
-}
 
 /// `ConfigurationStore` provides an interface that can optionally be implemented by FSMs
 /// to store configuration updates made in the replicated log. In general this is only
@@ -919,7 +947,11 @@ mod test {
     use super::*;
     use crate::config::ConfigurationChangeCommand::AddNonvoter;
     use crate::config::ProtocolVersion::ProtocolVersionMax;
+    #[cfg(not(feature = "default"))]
     use crossbeam::channel::unbounded;
+
+    #[cfg(feature = "default")]
+    use tokio::sync::mpsc::unbounded_channel;
 
     fn sample_configuration() -> Configuration {
         Configuration::with_servers(vec![
@@ -1145,7 +1177,10 @@ mod test {
 
     #[test]
     fn test_config_builder() {
+        #[cfg(not(feature = "default"))]
         let (_, rx) = unbounded::<bool>();
+        #[cfg(feature = "default")]
+        let (_, rx) = unbounded_channel::<bool>();
         let config = ConfigBuilder::default()
             .set_local_id(123)
             .set_protocol_version(ProtocolVersionMax)
@@ -1168,7 +1203,11 @@ mod test {
 
     #[test]
     fn test_reloadable_config() {
+        #[cfg(not(feature = "default"))]
         let (_, rx) = unbounded::<bool>();
+        #[cfg(feature = "default")]
+        let (_, rx) = unbounded_channel::<bool>();
+
         let config = ConfigBuilder::default()
             .set_local_id(123)
             .finalize(rx)
@@ -1187,7 +1226,11 @@ mod test {
         let rc = ReloadableConfig::from_config(config);
         assert_eq!(rc.snapshot_interval, Duration::from_secs(120));
 
+        #[cfg(not(feature = "default"))]
         let (_, rx) = unbounded::<bool>();
+        #[cfg(feature = "default")]
+        let (_, rx) = unbounded_channel::<bool>();
+
         let rc = ReloadableConfig::default();
         let config = ConfigBuilder::default()
             .set_local_id(123)

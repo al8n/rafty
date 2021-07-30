@@ -247,7 +247,7 @@ impl MemMetrics {
 /// `setup_mem_metrics` will set a global in-memory metrics recorder
 pub fn setup_mem_metrics() {
     SETUP.call_once(|| {
-        set_boxed_recorder(box RECORDER.clone()).unwrap();
+        set_boxed_recorder(Box::new(RECORDER.clone())).unwrap();
     });
 }
 

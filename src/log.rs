@@ -17,15 +17,23 @@
 use crate::errors::Errors;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use derive_getters::Getters;
 use metrics::gauge;
 use parking_lot::RwLock;
 use parse_display::{Display, FromStr};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+
+#[cfg(feature = "default")]
 use tokio::time::sleep;
+#[cfg(feature = "default")]
 use tokio::{select, sync::mpsc::Receiver};
+
+#[cfg(not(feature = "default"))]
+use crossbeam::{
+    select,
+    channel::Receiver
+};
 
 /// LogType describes various types of log entries
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display, FromStr)]
@@ -62,7 +70,7 @@ pub enum LogType {
 
 /// Log entries are replicated to all members of the Raft cluster
 /// and form the heart of the replicated state machine.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone)]
 pub struct Log {
     /// index holds the index of the log entry
     pub index: u64,
@@ -239,6 +247,7 @@ where
 }
 
 /// `emit_log_store_metrics` emits the information to the metrics
+#[cfg(feature = "default")]
 async fn emit_log_store_metrics<T>(
     store: T,
     prefix: String,
@@ -249,8 +258,37 @@ async fn emit_log_store_metrics<T>(
 {
     loop {
         select! {
-            _ = stop_chan.recv() => return,
-            _ = sleep(interval) => {
+                _ = stop_chan.recv() => return,
+                _ = sleep(interval) => {
+                    // In error case emit 0 as the age
+                    let mut age_ms = 0i64;
+                    if let Ok(l) = oldest_log(store.clone()) {
+                        if l.append_at.timestamp_millis() != 0 {
+                            age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
+                        }
+                    }
+
+                    gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
+                },
+            }
+    }
+}
+
+
+/// `emit_log_store_metrics` emits the information to the metrics
+#[cfg(not(feature = "default"))]
+fn emit_log_store_metrics<T>(
+    store: T,
+    prefix: String,
+    interval: Duration,
+    stop_chan: &mut Receiver<()>,
+) where
+    T: LogStore + Clone,
+{
+    loop {
+        select! {
+            recv(stop_chan) -> _ => return,
+            default(interval) => {
                 // In error case emit 0 as the age
                 let mut age_ms = 0i64;
                 if let Ok(l) = oldest_log(store.clone()) {
@@ -258,12 +296,12 @@ async fn emit_log_store_metrics<T>(
                         age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
                     }
                 }
-
                 gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
             },
         }
     }
 }
+
 
 /// `LogCache` wraps any `LogStore` implementation to provide an
 /// in-memory ring buffer. This is used to cache access to
@@ -341,7 +379,39 @@ mod tests {
     use metrics::{GaugeValue, Key};
     use std::sync::Arc;
     use std::time::Duration;
-    use tokio::{join, time::sleep};
+    #[cfg(feature = "default")]
+    use tokio::{time::sleep};
+    #[cfg(not(feature = "default"))]
+    use std::thread::sleep;
+
+    fn mock_logs() -> Vec<Arc<Log>> {
+        vec![
+            Arc::new(Log {
+                index: 1234,
+                term: 1,
+                typ: LogType::Command,
+                data: vec![],
+                extensions: vec![],
+                append_at: Utc::now(),
+            }),
+            Arc::new(Log {
+                index: 1235,
+                term: 1,
+                typ: LogType::Command,
+                data: vec![],
+                extensions: vec![],
+                append_at: Utc::now(),
+            }),
+            Arc::new(Log {
+                index: 1236,
+                term: 2,
+                typ: LogType::Command,
+                data: vec![],
+                extensions: vec![],
+                append_at: Utc::now(),
+            }),
+        ]
+    }
 
     #[test]
     fn test_oldest_log() {
@@ -409,6 +479,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "default")]
     #[tokio::test]
     async fn test_emit_log_store_metrics() {
         setup_mem_metrics();
@@ -416,33 +487,7 @@ mod tests {
 
         let mut s = MemStore::new();
 
-        let logs = vec![
-            Arc::new(Log {
-                index: 1234,
-                term: 1,
-                typ: LogType::Command,
-                data: vec![],
-                extensions: vec![],
-                append_at: Utc::now(),
-            }),
-            Arc::new(Log {
-                index: 1235,
-                term: 1,
-                typ: LogType::Command,
-                data: vec![],
-                extensions: vec![],
-                append_at: Utc::now(),
-            }),
-            Arc::new(Log {
-                index: 1236,
-                term: 2,
-                typ: LogType::Command,
-                data: vec![],
-                extensions: vec![],
-                append_at: Utc::now(),
-            }),
-        ];
-
+        let logs = mock_logs();
         s.store_logs(logs).unwrap();
 
         let (stop_ch_tx, mut stop_ch_rx) = tokio::sync::mpsc::channel(1);
@@ -477,6 +522,48 @@ mod tests {
         let bi = get_registered(key.clone()).unwrap();
         assert_eq!(bi, MetricsBasic::from_type(MetricsType::Gauge));
         stop_ch_tx.send(()).await;
+    }
+
+    #[cfg(not(feature = "default"))]
+    fn test_emit_log_store_metrics() {
+        setup_mem_metrics();
+        let start = Utc::now();
+        let mut s = MemStore::new();
+        let logs = mock_logs();
+        s.store_logs(logs).unwrap();
+
+        let (stop_ch_tx, stop_ch_rx) = crossbeam::channel::bounded::<()>(1);
+
+        std::thread::spawn(move || {
+            emit_log_store_metrics(
+                s,
+                "raft.test".to_string(),
+                std::time::Duration::from_millis(100),
+                stop_ch_rx,
+            );
+        });
+
+        sleep(Duration::from_millis(1000));
+
+        let key = Key::from_static_name("raft.test.oldest.log.age");
+        let gv = get_gauge(key.clone()).unwrap();
+
+        match gv {
+            GaugeValue::Absolute(val) => {
+                assert!(
+                    val <= Utc::now().signed_duration_since(start).num_milliseconds() as f64,
+                    "max age before test start: {}",
+                    val
+                );
+                assert!(val >= 1.0, "max age less than interval:  {}", val);
+            }
+            GaugeValue::Increment(_) => panic!("expected absolute value, but got increment value"),
+            GaugeValue::Decrement(_) => panic!("expected absolute value, but got decrement value"),
+        }
+
+        let bi = get_registered(key.clone()).unwrap();
+        assert_eq!(bi, MetricsBasic::from_type(MetricsType::Gauge));
+        stop_ch_tx.send(()).unwrap();
     }
 
     #[test]

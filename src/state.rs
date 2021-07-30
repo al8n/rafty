@@ -60,7 +60,7 @@ pub struct State {
 }
 
 mod tests {
-    use super::*;
+    use crate::state::StateType;
 
     #[test]
     fn test_state() {
