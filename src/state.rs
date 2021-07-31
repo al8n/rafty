@@ -15,11 +15,20 @@
  * limitations under the License.
  */
 use parse_display::{Display, FromStr};
+use parking_lot::Mutex;
+use std::sync::Arc;
+use std::cmp::max;
+
+#[cfg(not(feature = "default"))]
+use crossbeam::sync::WaitGroup;
+
+#[cfg(feature = "default")]
+use crate::wg::WaitGroup;
 
 /// State captures the state of a Raft node: Follower, Candidate, Leader, or Shutdown
 #[derive(Display, FromStr, Debug, Copy, Clone, Eq, PartialEq)]
 #[display(style = "CamelCase")]
-pub enum StateType {
+pub(crate) enum StateType {
     /// Follower is the initial state of a Raft node.
     Follower,
 
@@ -33,7 +42,10 @@ pub enum StateType {
     Shutdown,
 }
 
-pub struct State {
+/// `State` is used to maintain various state variables
+/// and provides an trait to set/get the variables in a
+/// thread safe manner.
+pub(crate) struct State {
     /// latest term server has seen
     current_term: u64,
 
@@ -57,6 +69,90 @@ pub struct State {
 
     /// the current state type
     typ: StateType,
+
+    /// Tracks running threads
+    #[cfg(feature = "default")]
+    group: WaitGroup,
+
+    #[cfg(not(feature = "default"))]
+    group: WaitGroup,
+}
+
+impl State {
+    pub fn new(current_term: u64, commit_index: u64, last_applied: u64, last_log_index: u64, last_log_term: u64, last_snapshot_index: u64, last_snapshot_term: u64, typ: StateType) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self {
+            current_term,
+            commit_index,
+            last_applied,
+            last_log_index,
+            last_log_term,
+            last_snapshot_index,
+            last_snapshot_term,
+            typ,
+            group: WaitGroup::new(),
+        }))
+    }
+
+    pub fn get_state(&self) -> StateType {
+        self.typ
+    }
+
+    pub fn set_state(&mut self, typ: StateType) {
+        self.typ = typ
+    }
+
+    pub fn get_current_term(&self) -> u64 {
+        self.current_term
+    }
+
+    pub fn set_current_term(&mut self, term: u64) {
+        self.current_term = term
+    }
+
+    pub fn get_last_log(&self) -> (u64, u64) {
+        (self.last_log_index, self.last_log_term)
+    }
+
+    pub fn set_last_log(&mut self, index: u64, term: u64) {
+        self.last_log_index = index;
+        self.last_log_term = term;
+    }
+
+    pub fn get_last_snapshot(&self) -> (u64, u64) {
+        (self.last_snapshot_index, self.last_snapshot_term)
+    }
+
+    pub fn set_last_snapshot(&mut self, index: u64, term: u64) {
+        self.last_snapshot_index = index;
+        self.last_snapshot_term = term;
+    }
+
+    pub fn get_commit_index(&self) -> u64 {
+        self.commit_index
+    }
+
+    pub fn set_commit_index(&mut self, index: u64) {
+        self.commit_index = index;
+    }
+
+    pub fn get_last_applied(&self) -> u64 {
+        self.last_applied
+    }
+
+    pub fn set_last_applied(&mut self, index: u64) {
+        self.last_applied = index;
+    }
+
+    pub fn get_last_index(&self) -> u64 {
+        max(self.last_log_index, self.last_snapshot_index)
+    }
+
+    pub fn get_last_entry(&self) -> (u64, u64) {
+        if self.last_log_index >= self.last_log_term {
+            return (self.last_log_index, self.last_log_term);
+        }
+        (self.last_snapshot_index, self.last_snapshot_term)
+    }
 }
 
 mod tests {

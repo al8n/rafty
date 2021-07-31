@@ -35,6 +35,11 @@ pub mod commitment;
 pub mod config;
 pub mod idgen;
 pub mod utils;
+pub mod discard_snapshot;
+pub mod transport;
+
+#[cfg(feature = "default")]
+mod wg;
 
 /// `Bytes` is alias for `Vec<u8>`
 pub type Bytes = Vec<u8>;

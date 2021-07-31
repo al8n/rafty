@@ -1,6 +1,5 @@
-/* Copyright 2021 Al Liu (https://github.com/al8n). Licensed under Apache-2.0.
- *
- * Copyright 2017 The Hashicorp's Raft repository authors(https://github.com/hashicorp/raft) authors. Licensed under MPL-2.0.
+/*
+ * Copyright 2021 Al Liu (https://github.com/al8n). Licensed under Apache-2.0.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
