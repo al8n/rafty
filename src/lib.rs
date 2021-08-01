@@ -6,6 +6,9 @@ extern crate rmp_serde as rmps;
 extern crate lazy_static;
 
 #[macro_use]
+extern crate parse_display;
+
+#[macro_use]
 mod macros;
 
 pub mod commands;
@@ -41,6 +44,9 @@ pub mod transport;
 
 #[cfg(feature = "default")]
 mod wg;
+mod replication;
+mod future;
+mod ch;
 
 /// `Bytes` is alias for `Vec<u8>`
 pub type Bytes = Vec<u8>;

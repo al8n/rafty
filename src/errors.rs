@@ -7,6 +7,11 @@ pub enum Error {
     /// `LogNotFound` when the specific log entry is not found
     LogNotFound,
 
+    /// `PipelineReplicationNotSupported` can be returned by the transport to
+    /// signal that pipeline replication is not supported in general, and that
+    /// no error message should be produced.
+    PipeLineReplicationNotSupported,
+
     /// `UnableToStoreLogs` unable to store logs within log store
     UnableToStoreLogs(String),
 
@@ -104,6 +109,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::LogNotFound => write!(f, "log not found"),
+            Error::PipeLineReplicationNotSupported => write!(f, "pipeline replication not supported"),
             Error::UnableToStoreLogs(s) => write!(f, "unable to store logs within log store, err: {}", *s),
             Error::NotFound => write!(f, "not found"),
             Error::EmptyLocalID => write!(f, "local_id cannot be empty"),
