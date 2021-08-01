@@ -35,7 +35,7 @@ use crossbeam::{
 };
 
 /// LogType describes various types of log entries
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Display, FromStr)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display, FromStr, Serialize, Deserialize)]
 #[display(style = "CamelCase")]
 pub enum LogType {
     /// `Command` is applied to a user FSM
@@ -69,7 +69,7 @@ pub enum LogType {
 
 /// Log entries are replicated to all members of the Raft cluster
 /// and form the heart of the replicated state machine.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Log {
     /// index holds the index of the log entry
     pub index: u64,
@@ -187,6 +187,19 @@ impl Default for Log {
     }
 }
 
+impl From<Arc<Log>> for Log {
+    fn from(al: Arc<Log>) -> Self {
+        Self {
+            index: al.index,
+            term: al.term,
+            typ: al.typ,
+            data: al.data.clone(),
+            extensions: al.extensions.clone(),
+            append_at: al.append_at,
+        }
+    }
+}
+
 /// LogStore is used to provide an interface for storing
 /// and retrieving logs in a durable fashion.
 pub trait LogStore {
@@ -245,20 +258,49 @@ where
     }
 }
 
-/// `emit_log_store_metrics` emits the information to the metrics
-#[cfg(feature = "default")]
-pub async fn emit_log_store_metrics<T>(
-    store: T,
-    prefix: String,
-    interval: Duration,
-    stop_chan: &mut Receiver<()>,
-) where
-    T: LogStore + Clone,
-{
-    loop {
-        select! {
-                _ = stop_chan.recv() => return,
-                _ = sleep(interval) => {
+cfg_default!(
+    /// `emit_log_store_metrics` emits the information to the metrics
+    pub async fn emit_log_store_metrics<T>(
+        store: T,
+        prefix: String,
+        interval: Duration,
+        stop_chan: &mut Receiver<()>,
+    ) where
+        T: LogStore + Clone,
+    {
+        loop {
+            select! {
+                    _ = stop_chan.recv() => return,
+                    _ = sleep(interval) => {
+                        // In error case emit 0 as the age
+                        let mut age_ms = 0i64;
+                        if let Ok(l) = oldest_log(store.clone()) {
+                            if l.append_at.timestamp_millis() != 0 {
+                                age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
+                            }
+                        }
+
+                        gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
+                    },
+                }
+        }
+    }
+);
+
+cfg_not_default!(
+    /// `emit_log_store_metrics` emits the information to the metrics
+    pub fn emit_log_store_metrics<T>(
+        store: T,
+        prefix: String,
+        interval: Duration,
+        stop_chan: &mut Receiver<()>,
+    ) where
+        T: LogStore + Clone,
+    {
+        loop {
+            select! {
+                recv(stop_chan) -> _ => return,
+                default(interval) => {
                     // In error case emit 0 as the age
                     let mut age_ms = 0i64;
                     if let Ok(l) = oldest_log(store.clone()) {
@@ -266,40 +308,12 @@ pub async fn emit_log_store_metrics<T>(
                             age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
                         }
                     }
-
                     gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
                 },
             }
-    }
-}
-
-
-/// `emit_log_store_metrics` emits the information to the metrics
-#[cfg(not(feature = "default"))]
-pub fn emit_log_store_metrics<T>(
-    store: T,
-    prefix: String,
-    interval: Duration,
-    stop_chan: &mut Receiver<()>,
-) where
-    T: LogStore + Clone,
-{
-    loop {
-        select! {
-            recv(stop_chan) -> _ => return,
-            default(interval) => {
-                // In error case emit 0 as the age
-                let mut age_ms = 0i64;
-                if let Ok(l) = oldest_log(store.clone()) {
-                    if l.append_at.timestamp_millis() != 0 {
-                        age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
-                    }
-                }
-                gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
-            },
         }
     }
-}
+);
 
 
 /// `LogCache` wraps any `LogStore` implementation to provide an

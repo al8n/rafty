@@ -18,10 +18,14 @@ use crate::config::{Configuration, ServerID, ServerSuffrage};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-#[cfg(feature = "default")]
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-#[cfg(not(feature = "default"))]
-use crossbeam::channel::{Receiver, Sender};
+
+cfg_default!(
+    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+);
+
+cfg_not_default!(
+    use crossbeam::channel::{Receiver, Sender};
+);
 
 /// `Commitment` is used to advance the leader's commit index. The leader and
 /// replication routines report in newly written entries with Match(), and

@@ -74,7 +74,7 @@ static DEFAULT_STARTUP: bool = false;
 ///
 /// **N.B.** You may notice that version 0 and version 1 have the same definition. For now, they are the same, but version 1 aims to prepare for future change.
 ///
-#[derive(Copy, Clone, Display, FromStr, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Display, FromStr, Eq, PartialEq, Debug, Serialize, Deserialize)]
 #[display(style = "CamelCase")]
 pub enum ProtocolVersion {
     /// `ProtocolVersionMin` is the minimum protocol version
@@ -107,7 +107,7 @@ pub enum ProtocolVersion {
 /// it in the next snapshot version.
 ///
 /// **N.B.** You may notice that version 0 and version 1 have the same definition. For now, they are the same, but version 1 aims to prepare for future change.
-#[derive(Copy, Clone, Display, FromStr, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Display, FromStr, Eq, PartialEq, Debug, Serialize, Deserialize)]
 #[display(style = "CamelCase")]
 pub enum SnapshotVersion {
     /// `SnapshotVersionMin` is the minimum snapshot version
@@ -1189,10 +1189,6 @@ mod test {
 
     #[test]
     fn test_config_builder() {
-        #[cfg(not(feature = "default"))]
-        let (_, rx) = unbounded::<bool>();
-        #[cfg(feature = "default")]
-        let (_, rx) = unbounded_channel::<bool>();
         let config = ConfigBuilder::default()
             .set_local_id(123)
             .set_protocol_version(ProtocolVersionMax)
@@ -1207,9 +1203,18 @@ mod test {
             .set_snapshot_threshold(8192)
             .set_leader_lease_timeout(Duration::from_millis(500))
             .set_no_snapshot_restore_on_start(false)
-            .set_skip_startup(false)
-            .finalize(rx)
-            .unwrap();
+            .set_skip_startup(false);
+
+        #[cfg(feature = "default")]
+        let (_, rx) = unbounded_channel::<bool>();
+        #[cfg(feature = "default")]
+        let config = config.finalize(rx).unwrap();
+
+        #[cfg(not(feature = "default"))]
+        let (_, rx) = unbounded::<bool>();
+        #[cfg(not(feature = "default"))]
+        let config = config.finalize(rx).unwrap();
+
         assert!(!config.skip_startup);
     }
 

@@ -33,6 +33,16 @@ macro_rules! cfg_default {
     }
 }
 
+macro_rules! cfg_not_default {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(feature = "default"))]
+            #[cfg_attr(docsrs, doc(cfg(not(feature = "default"))))]
+            $item
+        )*
+    }
+}
+
 macro_rules! cfg_test {
     ($($item:item)*) => {
         $(

@@ -18,12 +18,15 @@ use parse_display::{Display, FromStr};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::cmp::max;
-
-#[cfg(not(feature = "default"))]
-use crossbeam::sync::WaitGroup;
-
-#[cfg(feature = "default")]
 use crate::wg::WaitGroup;
+
+cfg_default!(
+    use tokio::spawn;
+);
+
+cfg_not_default!(
+    use std::thread::spawn;
+);
 
 /// State captures the state of a Raft node: Follower, Candidate, Leader, or Shutdown
 #[derive(Display, FromStr, Debug, Copy, Clone, Eq, PartialEq)]
@@ -71,10 +74,6 @@ pub(crate) struct State {
     typ: StateType,
 
     /// Tracks running threads
-    #[cfg(feature = "default")]
-    group: WaitGroup,
-
-    #[cfg(not(feature = "default"))]
     group: WaitGroup,
 }
 
@@ -152,6 +151,42 @@ impl State {
             return (self.last_log_index, self.last_log_term);
         }
         (self.last_snapshot_index, self.last_snapshot_term)
+    }
+
+    #[cfg(feature = "default")]
+    /// Start a thread and properly handle the race between a routine
+    /// starting and incrementing, and exiting and decrementing.
+    pub async fn spawn<F>(&self, f: F)
+    where F: FnOnce() + Send + 'static {
+        let wg = self.group.add(1);
+        spawn(async move {
+            f();
+            wg.done();
+        });
+    }
+
+    #[cfg(feature = "default")]
+    /// wait for all threads in waitgroup finish
+    pub async fn wait_shutdown(&mut self) {
+        self.group.wait().await;
+    }
+
+    #[cfg(not(feature = "default"))]
+    /// Start a thread and properly handle the race between a routine
+    /// starting and incrementing, and exiting and decrementing.
+    pub fn spawn<F>(&self, f: F)
+        where F: FnOnce() {
+        let wg = self.clone();
+        spawn(move || {
+            f();
+            drop(wg);
+        });
+    }
+
+    #[cfg(not(feature = "default"))]
+    /// wait for all threads in waitgroup finish
+    pub fn wait_shutdown(&mut self) {
+        self.group.wait();
     }
 }
 
