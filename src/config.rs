@@ -30,14 +30,10 @@ cfg_sync!(
 );
 
 cfg_default!(
-    use tokio::{
-        io::AsyncRead,
-        sync::mpsc::UnboundedReceiver
-    };
+    use tokio::{io::AsyncRead, sync::mpsc::UnboundedReceiver};
 );
 
 use std::sync::Arc;
-
 
 static DEFAULT_HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(1000);
 static DEFAULT_ELECTION_TIMEOUT: Duration = Duration::from_millis(1000);
@@ -473,10 +469,7 @@ impl ConfigBuilder {
     /// `finalize` returns a `Result<Config, Error>`
     #[cfg(feature = "default")]
     #[inline]
-    pub fn finalize(
-        self,
-        notify_ch: UnboundedReceiver<bool>,
-    ) -> Result<Config, Error> {
+    pub fn finalize(self, notify_ch: UnboundedReceiver<bool>) -> Result<Config, Error> {
         let c = Config {
             protocol_version: self.protocol_version.unwrap(),
             heartbeat_timeout: self.heartbeat_timeout.unwrap(),
@@ -501,10 +494,7 @@ impl ConfigBuilder {
     /// `finalize` returns a `Result<Config, Error>`
     #[cfg(not(feature = "default"))]
     #[inline]
-    pub fn finalize(
-        self,
-        notify_ch: Receiver<bool>,
-    ) -> Result<Config, Error> {
+    pub fn finalize(self, notify_ch: Receiver<bool>) -> Result<Config, Error> {
         let c = Config {
             protocol_version: self.protocol_version.unwrap(),
             heartbeat_timeout: self.heartbeat_timeout.unwrap(),
@@ -688,7 +678,6 @@ cfg_test!(
     }
 );
 
-
 /// `ConfigurationStore` provides an interface that can optionally be implemented by FSMs
 /// to store configuration updates made in the replicated log. In general this is only
 /// necessary for FSMs that mutate durable state directly instead of applying changes
@@ -750,7 +739,7 @@ pub enum ConfigurationChangeCommand {
 /// make to its current configuration. It's used only within a single server
 /// (never serialized into the log), as part of `ConfigurationChangeFuture`.
 #[derive(Debug, Clone, Eq, PartialEq)]
-struct ConfigurationChangeRequest {
+pub struct ConfigurationChangeRequest {
     command: ConfigurationChangeCommand,
     server_id: ServerID,
     server_address: ServerAddress, // only present for `AddStaging`, `AddNonvoter`

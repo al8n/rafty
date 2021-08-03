@@ -16,9 +16,7 @@
  */
 use crate::errors::Error;
 
-pub trait SnapshotStore {
-
-}
+pub trait SnapshotStore {}
 
 pub trait SnapshotSink {
     fn id(&self) -> String;

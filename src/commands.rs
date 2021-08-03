@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 use crate::config::{ProtocolVersion, SnapshotVersion};
-use std::sync::Arc;
 use crate::log::Log;
+use std::sync::Arc;
 
 /// `RPCHeader` is a common sub-structure used to pass along protocol version and
 /// other information about the cluster. For older Raft implementations before
@@ -125,7 +125,7 @@ pub struct RequestVoteResponse {
     term: u64,
 
     // Is the vote granted
-    granted: bool
+    granted: bool,
 }
 
 /// `InstallSnapshotRequest` is the command sent to a Raft peer to bootstrap its
@@ -174,4 +174,13 @@ pub struct TimeoutNowResponse {
     header: RPCHeader,
 }
 
-with_rpc_header!(AppendEntriesRequest, AppendEntriesResponse, RequestVoteRequest, RequestVoteResponse, InstallSnapshotRequest, InstallSnapshotResponse, TimeoutNowRequest, TimeoutNowResponse);
+with_rpc_header!(
+    AppendEntriesRequest,
+    AppendEntriesResponse,
+    RequestVoteRequest,
+    RequestVoteResponse,
+    InstallSnapshotRequest,
+    InstallSnapshotResponse,
+    TimeoutNowRequest,
+    TimeoutNowResponse
+);

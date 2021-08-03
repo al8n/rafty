@@ -1,6 +1,6 @@
-use crate::config::{SnapshotVersion, Configuration};
-use crate::snapshot::SnapshotSink;
+use crate::config::{Configuration, SnapshotVersion};
 use crate::errors::Error;
+use crate::snapshot::SnapshotSink;
 
 /// `DiscardSnapshotStore` is used to successfully snapshot while
 /// always discarding the snapshot. This is useful for when the

@@ -1,9 +1,12 @@
-use std::string::FromUtf8Error;
 use std::fmt::Formatter;
+use std::string::FromUtf8Error;
 
 /// `Error` represents custom errors in this crate.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Error {
+    /// `None` represents for no error.
+    None,
+
     /// `LogNotFound` when the specific log entry is not found
     LogNotFound,
 
@@ -101,6 +104,8 @@ pub enum Error {
 
     /// `FSMRestore` error
     FSMRestore(String),
+
+
 }
 
 impl std::error::Error for Error {}
@@ -108,9 +113,14 @@ impl std::error::Error for Error {}
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Error::None => write!(f, "no error"),
             Error::LogNotFound => write!(f, "log not found"),
-            Error::PipeLineReplicationNotSupported => write!(f, "pipeline replication not supported"),
-            Error::UnableToStoreLogs(s) => write!(f, "unable to store logs within log store, err: {}", *s),
+            Error::PipeLineReplicationNotSupported => {
+                write!(f, "pipeline replication not supported")
+            }
+            Error::UnableToStoreLogs(s) => {
+                write!(f, "unable to store logs within log store, err: {}", *s)
+            }
             Error::NotFound => write!(f, "not found"),
             Error::EmptyLocalID => write!(f, "local_id cannot be empty"),
             Error::ShortHeartbeatTimeout => write!(f, "heartbeat_timeout is too low"),
@@ -119,8 +129,14 @@ impl std::fmt::Display for Error {
             Error::LargeMaxAppendEntries => write!(f, " max_append_entries is too large"),
             Error::ShortSnapshotInterval => write!(f, "snapshot_interval is too short"),
             Error::ShortLeaderLeaseTimeout => write!(f, "leader_lease_timeout is too short"),
-            Error::LeaderLeaseTimeoutLargerThanHeartbeatTimeout => write!(f, "leader_lease_timeout cannot be larger than heartbeat timeout"),
-            Error::ElectionTimeoutSmallerThanHeartbeatTimeout => write!(f, "election_timeout must be equal or greater than heartbeat timeout"),
+            Error::LeaderLeaseTimeoutLargerThanHeartbeatTimeout => write!(
+                f,
+                "leader_lease_timeout cannot be larger than heartbeat timeout"
+            ),
+            Error::ElectionTimeoutSmallerThanHeartbeatTimeout => write!(
+                f,
+                "election_timeout must be equal or greater than heartbeat timeout"
+            ),
             Error::FromUtf8Error(e) => write!(f, "cannot convert UTF8 to String. From: {}", *e),
             Error::Leader => write!(f, "node is the leader"),
             Error::NotLeader => write!(f, "node is not the leader"),
@@ -131,10 +147,23 @@ impl std::fmt::Display for Error {
             Error::NothingNewToSnapshot => write!(f, "othing new to snapshot"),
             Error::CantBootstrap => write!(f, "bootstrap only works on new clusters"),
             Error::LeadershipTransferInProgress => write!(f, "leadership transfer in progress"),
-            Error::DuplicateServerID(id) => write!(f, "found duplicate server ID in configuration: {}", *id),
-            Error::DuplicateServerAddress(addr) => write!(f, "found duplicate server address in configuration: {}", *addr),
+            Error::DuplicateServerID(id) => {
+                write!(f, "found duplicate server ID in configuration: {}", *id)
+            }
+            Error::DuplicateServerAddress(addr) => write!(
+                f,
+                "found duplicate server address in configuration: {}",
+                *addr
+            ),
             Error::NonVoter => write!(f, "need at least one voter in configuration"),
-            Error::ConfigurationChanged { current_index, prev_index } => write!(f, "configuration changed since {} (latest is {})", *prev_index, *current_index),
+            Error::ConfigurationChanged {
+                current_index,
+                prev_index,
+            } => write!(
+                f,
+                "configuration changed since {} (latest is {})",
+                *prev_index, *current_index
+            ),
             #[cfg(feature = "default")]
             Error::FSMRestore(e) => write!(f, "FSM restore IO error. From: {}", *e),
         }

@@ -19,7 +19,6 @@ pub mod log;
 pub mod mem_metrics;
 pub mod mem_store;
 
-
 cfg_default!(
     /// `pb` module contains the auto-generated RPC code.
     pub mod pb;
@@ -37,16 +36,16 @@ pub mod snapshot;
 pub mod commitment;
 /// The configuration for a Raft node
 pub mod config;
-pub mod idgen;
-pub mod utils;
 pub mod discard_snapshot;
+pub mod idgen;
 pub mod transport;
+pub mod utils;
 
+mod future;
+mod replication;
 #[cfg(feature = "default")]
 mod wg;
-mod replication;
-mod future;
-mod ch;
+pub mod raft;
 
 /// `Bytes` is alias for `Vec<u8>`
 pub type Bytes = Vec<u8>;

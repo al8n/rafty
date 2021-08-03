@@ -55,14 +55,10 @@ pub struct Commitment {
 
 impl Commitment {
     pub fn new(
-        #[cfg(feature = "default")]
-        commit_tx_ch: UnboundedSender<()>,
-        #[cfg(feature = "default")]
-        commit_rx_ch: UnboundedReceiver<()>,
-        #[cfg(not(feature = "default"))]
-        commit_tx_ch: Sender<()>,
-        #[cfg(not(feature = "default"))]
-        commit_rx_ch: Receiver<()>,
+        #[cfg(feature = "default")] commit_tx_ch: UnboundedSender<()>,
+        #[cfg(feature = "default")] commit_rx_ch: UnboundedReceiver<()>,
+        #[cfg(not(feature = "default"))] commit_tx_ch: Sender<()>,
+        #[cfg(not(feature = "default"))] commit_rx_ch: Receiver<()>,
         cfg: Configuration,
         start_index: u64,
     ) -> Arc<Mutex<Self>> {

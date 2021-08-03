@@ -1,6 +1,6 @@
-use std::time::Duration;
-use crate::config::Server;
 use crate::commitment::Commitment;
+use crate::config::Server;
+use std::time::Duration;
 
 cfg_default!(
     use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, Sender, Receiver};
@@ -56,6 +56,4 @@ struct FollowReplication<'a> {
     trigger_tx: Sender<()>,
     #[cfg(not(feature = "default"))]
     trigger_rx: Receiver<()>,
-
-
 }

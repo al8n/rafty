@@ -77,7 +77,6 @@ pub trait FSMSnapshot {
 
 // TODO: fsm.go line 69: func(r *Raft) runFSM() {}
 
-
 /// `fsm_restore_and_measure` wraps the `restore` call on an `FSM` to consistently measure
 /// and report timing metrics. The caller is still responsible for calling Close
 /// on the source in all cases.

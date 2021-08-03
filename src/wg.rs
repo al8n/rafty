@@ -76,7 +76,6 @@ cfg_default!(
         }
     }
 
-
     struct WaitGroupFuture<'a> {
         inner: &'a Arc<Inner>
     }

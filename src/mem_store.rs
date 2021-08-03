@@ -14,12 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::collections::HashMap;
-use std::sync::Arc;
 use crate::errors::Error;
 use crate::log::{Log, LogStore};
 use crate::stable::StableStore;
 use crate::Bytes;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// MemStore implements the LogStore and StableStore trait.
 /// It should NOT EVER be used for production. It is used only for

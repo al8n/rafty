@@ -14,11 +14,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use parse_display::{Display, FromStr};
-use parking_lot::Mutex;
-use std::sync::Arc;
-use std::cmp::max;
 use crate::wg::WaitGroup;
+use parking_lot::Mutex;
+use parse_display::{Display, FromStr};
+use std::cmp::max;
+use std::sync::Arc;
 
 cfg_default!(
     use tokio::spawn;
@@ -78,7 +78,16 @@ pub(crate) struct State {
 }
 
 impl State {
-    pub fn new(current_term: u64, commit_index: u64, last_applied: u64, last_log_index: u64, last_log_term: u64, last_snapshot_index: u64, last_snapshot_term: u64, typ: StateType) -> Arc<Mutex<Self>> {
+    pub fn new(
+        current_term: u64,
+        commit_index: u64,
+        last_applied: u64,
+        last_log_index: u64,
+        last_log_term: u64,
+        last_snapshot_index: u64,
+        last_snapshot_term: u64,
+        typ: StateType,
+    ) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             current_term,
             commit_index,
@@ -157,7 +166,9 @@ impl State {
     /// Start a thread and properly handle the race between a routine
     /// starting and incrementing, and exiting and decrementing.
     pub async fn spawn<F>(&self, f: F)
-    where F: FnOnce() + Send + 'static {
+    where
+        F: FnOnce() + Send + 'static,
+    {
         let wg = self.group.add(1);
         spawn(async move {
             f();
@@ -175,7 +186,9 @@ impl State {
     /// Start a thread and properly handle the race between a routine
     /// starting and incrementing, and exiting and decrementing.
     pub fn spawn<F>(&self, f: F)
-        where F: FnOnce() {
+    where
+        F: FnOnce(),
+    {
         let wg = self.clone();
         spawn(move || {
             f();

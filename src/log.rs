@@ -29,10 +29,7 @@ use tokio::time::sleep;
 use tokio::{select, sync::mpsc::Receiver};
 
 #[cfg(not(feature = "default"))]
-use crossbeam::{
-    select,
-    channel::Receiver
-};
+use crossbeam::{channel::Receiver, select};
 
 /// LogType describes various types of log entries
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display, FromStr, Serialize, Deserialize)]
@@ -270,19 +267,19 @@ cfg_default!(
     {
         loop {
             select! {
-                    _ = stop_chan.recv() => return,
-                    _ = sleep(interval) => {
-                        // In error case emit 0 as the age
-                        let mut age_ms = 0i64;
-                        if let Ok(l) = oldest_log(store.clone()) {
-                            if l.append_at.timestamp_millis() != 0 {
-                                age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
-                            }
+                _ = stop_chan.recv() => return,
+                _ = sleep(interval) => {
+                    // In error case emit 0 as the age
+                    let mut age_ms = 0i64;
+                    if let Ok(l) = oldest_log(store.clone()) {
+                        if l.append_at.timestamp_millis() != 0 {
+                            age_ms = Utc::now().signed_duration_since(l.append_at).num_milliseconds();
                         }
+                    }
 
-                        gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
-                    },
-                }
+                    gauge!(vec![prefix.clone(), "oldest.log.age".to_string()].join("."), age_ms as f64);
+                },
+            }
         }
     }
 );
@@ -314,7 +311,6 @@ cfg_not_default!(
         }
     }
 );
-
 
 /// `LogCache` wraps any `LogStore` implementation to provide an
 /// in-memory ring buffer. This is used to cache access to
@@ -391,11 +387,11 @@ mod tests {
     use chrono::Utc;
     use metrics::{GaugeValue, Key};
     use std::sync::Arc;
-    use std::time::Duration;
-    #[cfg(feature = "default")]
-    use tokio::{time::sleep};
     #[cfg(not(feature = "default"))]
     use std::thread::sleep;
+    use std::time::Duration;
+    #[cfg(feature = "default")]
+    use tokio::time::sleep;
 
     fn mock_logs() -> Vec<Arc<Log>> {
         vec![
