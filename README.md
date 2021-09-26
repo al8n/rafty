@@ -1,4 +1,4 @@
-> Note: This repo is in the very initial stage, the core functions of Raft have not been implemented.
+> Note: This repo is in the very initial stage, the core functions of Raft have not been implemented. Archieved
 
 <div align="center">
 <h1>Rafty</h1>
